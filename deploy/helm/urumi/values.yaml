@@ -18,4 +18,13 @@ database:
   resources:
     requests: {cpu: 100m, memory: 256Mi}
     limits: {cpu: "1", memory: 768Mi}
+woocommerceMcp:
+  enabled: false
+  image: urumi-woocommerce-mcp:0.1.0
+  secretName: urumi-woocommerce-mcp-secrets
+  timezone: Asia/Kolkata
+  timeoutMs: 8000
+  resources:
+    requests: {cpu: 50m, memory: 64Mi}
+    limits: {cpu: 500m, memory: 192Mi}
 

@@ -13,11 +13,12 @@ python3 scripts/create-secrets.py
 docker build -t urumi-store:0.1.0 store
 k3d image import urumi-store:0.1.0 -c urumi
 helm upgrade --install urumi deploy/helm/urumi -n urumi \
-  -f deploy/helm/urumi/values-local.yaml --wait --timeout 10m
+  -f deploy/helm/urumi/values-local.yaml --set woocommerceMcp.enabled=false --wait --timeout 10m
 # The local development image tag is reused; replace the pod to load rebuilt code.
 kubectl rollout restart deployment/urumi-store -n urumi
 kubectl rollout status deployment/urumi-store -n urumi --timeout=180s
 kubectl exec -n urumi deployment/urumi-store -- bash /opt/urumi/bootstrap.sh
+bash scripts/local-mcp-up.sh
 echo 'Store: http://store.localhost:8080/shop/'
 echo 'Admin: http://store.localhost:8080/wp-admin/'
 

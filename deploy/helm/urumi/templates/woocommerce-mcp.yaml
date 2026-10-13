@@ -1,0 +1,84 @@
+{{- if .Values.woocommerceMcp.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}-woocommerce-mcp
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app: "{{ .Release.Name }}-woocommerce-mcp"}
+  template:
+    metadata:
+      labels: {app: "{{ .Release.Name }}-woocommerce-mcp"}
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: mcp
+          image: {{ .Values.woocommerceMcp.image | quote }}
+          imagePullPolicy: IfNotPresent
+          ports: [{name: http, containerPort: 3000}]
+          env:
+            - {name: WOO_BASE_URL, value: "http://{{ .Release.Name }}-store"}
+            - {name: WOO_PUBLIC_URL, value: {{ .Values.store.url | quote }}}
+            - {name: STORE_TIMEZONE, value: {{ .Values.woocommerceMcp.timezone | quote }}}
+            - {name: WOO_TIMEOUT_MS, value: {{ .Values.woocommerceMcp.timeoutMs | quote }}}
+            - {name: ALLOWED_HOSTS, value: "localhost,127.0.0.1,{{ .Release.Name }}-woocommerce-mcp,{{ .Release.Name }}-woocommerce-mcp.{{ .Release.Namespace }}.svc.cluster.local"}
+          envFrom:
+            - secretRef: {name: {{ .Values.woocommerceMcp.secretName | quote }}}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}
+          resources:
+            {{- toYaml .Values.woocommerceMcp.resources | nindent 12 }}
+          startupProbe:
+            httpGet: {path: /healthz, port: http}
+            periodSeconds: 5
+            failureThreshold: 20
+          readinessProbe:
+            httpGet: {path: /readyz, port: http}
+            periodSeconds: 10
+            timeoutSeconds: 2
+          livenessProbe:
+            httpGet: {path: /healthz, port: http}
+            periodSeconds: 20
+            timeoutSeconds: 2
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Release.Name }}-woocommerce-mcp
+spec:
+  selector: {app: "{{ .Release.Name }}-woocommerce-mcp"}
+  ports: [{name: http, port: 3000, targetPort: http}]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ .Release.Name }}-woocommerce-mcp
+spec:
+  podSelector:
+    matchLabels: {app: "{{ .Release.Name }}-woocommerce-mcp"}
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels: {app: "{{ .Release.Name }}-gateway"}
+      ports: [{protocol: TCP, port: 3000}]
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels: {kubernetes.io/metadata.name: kube-system}
+          podSelector:
+            matchLabels: {k8s-app: kube-dns}
+      ports: [{protocol: UDP, port: 53}, {protocol: TCP, port: 53}]
+    - to:
+        - podSelector:
+            matchLabels: {app: "{{ .Release.Name }}-store"}
+      ports: [{protocol: TCP, port: 80}]
+{{- end }}

@@ -1,12 +1,12 @@
 # Urumi team MCP gateway
 
-The Kubernetes WooCommerce store is implemented. The team MCP gateway, dashboard, and chat are planned and are not implemented yet.
+The Kubernetes WooCommerce store and its internal MCP service are implemented. The team MCP gateway, dashboard, and chat are planned and are not implemented yet.
 
-See [the store architecture](docs/store-architecture.md) and [requirements checklist](docs/requirements.md).
+See [the store architecture](docs/store-architecture.md), [WooCommerce MCP design](docs/woocommerce-mcp.md), and [requirements checklist](docs/requirements.md).
 
 ## Local setup
 
-Requirements: Docker engine running (approximately 8 GB available to Docker), kubectl, Helm, k3d, Python 3. On macOS, Helm and k3d can be installed with `brew install helm k3d`.
+Requirements: Docker engine running (approximately 8 GB available to Docker), kubectl, Helm, k3d 5.9, Python 3, and Node.js 22 with npm. On macOS, Helm and k3d can be installed with `brew install helm k3d`.
 
 Run from the repository root:
 
@@ -16,7 +16,9 @@ bash scripts/local-up.sh
 
 This creates a dedicated `urumi` cluster, selects its context, creates namespace `urumi`, generates Secrets, builds/imports the store image, installs Helm resources, and bootstraps WooCommerce. Rerunning preserves existing credentials and avoids duplicating the demo product.
 
-Local setup also starts an existing stopped cluster and replaces the store pod to load a rebuilt development image. This causes a short local interruption. Production will use versioned image tags instead.
+It then provisions a dedicated WooCommerce service credential and deploys our handwritten MCP server. No LLM provider or paid cloud resource is needed for this setup.
+
+Local setup also starts an existing stopped cluster and replaces pods to load rebuilt development images. It deploys the store before enabling MCP, so credentials can be provisioned on a fresh installation. This causes short local interruptions. Production will use immutable release image tags instead.
 
 URLs:
 
@@ -49,6 +51,14 @@ kubectl rollout status deployment/urumi-store -n urumi --timeout=180s
 The product, order, and store settings should remain. This tests pod replacement, not disaster recovery. Deleting the cluster deletes its local storage. The local-path storage used here is not replicated or highly available. Do not delete the namespace or uninstall the release if you need to retain its PVCs; these actions require a deliberate backup/retention plan.
 
 Run `python3 scripts/check-database-isolation.py` to verify an unrelated pod is blocked from connecting to MariaDB. This creates and removes only its own temporary test pod.
+
+## WooCommerce MCP
+
+The internal endpoint is `http://urumi-woocommerce-mcp:3000/mcp`. It has no public Ingress and only accepts the gateway's network identity plus its upstream bearer credential. Do not configure an external MCP client to access this service directly; the public gateway endpoint will be added separately.
+
+Tools: `list_products`, `create_product`, `list_orders`, `get_order`, and `update_order_status`. Credentials live in `urumi-woocommerce-mcp-secrets`, with a private ignored local backup. MCP uses stateless Streamable HTTP and calls WooCommerce REST API v3 with signed requests.
+
+For an existing store, build/deploy only MCP with `bash scripts/local-mcp-up.sh`. Run `npm run build` and `npm test` for local checks. After placing a demo order, run `python3 scripts/check-woocommerce-mcp.py` for the real-cluster integration check. It creates/deletes its own test product and temporarily changes/restores a test order's status; use only the local demo store. See [MCP design and security details](docs/woocommerce-mcp.md).
 
 ## Troubleshooting
 

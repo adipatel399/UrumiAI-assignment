@@ -1,0 +1,98 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ .Release.Name }}-content
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: {{ .Values.store.storageClass | quote }}
+  resources:
+    requests:
+      storage: {{ .Values.store.contentSize }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}-store
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels: {app: "{{ .Release.Name }}-store"}
+  template:
+    metadata:
+      labels: {app: "{{ .Release.Name }}-store"}
+    spec:
+      automountServiceAccountToken: false
+      containers:
+        - name: wordpress
+          image: {{ .Values.store.image | quote }}
+          imagePullPolicy: {{ .Values.store.imagePullPolicy }}
+          ports: [{name: http, containerPort: 80}]
+          env:
+            - {name: WORDPRESS_DB_HOST, value: "{{ .Release.Name }}-database"}
+            - {name: WORDPRESS_DB_NAME, value: wordpress}
+            - {name: WORDPRESS_DB_USER, value: wordpress}
+            - name: WORDPRESS_DB_PASSWORD
+              valueFrom:
+                secretKeyRef: {name: "{{ .Values.store.secretName }}", key: db-password}
+            - {name: STORE_URL, value: {{ .Values.store.url | quote }}}
+            - name: WP_ADMIN_USER
+              valueFrom:
+                secretKeyRef: {name: "{{ .Values.store.secretName }}", key: WP_ADMIN_USER}
+            - name: WP_ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef: {name: "{{ .Values.store.secretName }}", key: WP_ADMIN_PASSWORD}
+            - name: WP_ADMIN_EMAIL
+              valueFrom:
+                secretKeyRef: {name: "{{ .Values.store.secretName }}", key: WP_ADMIN_EMAIL}
+          resources:
+            {{- toYaml .Values.store.resources | nindent 12 }}
+          startupProbe:
+            httpGet: {path: /healthz.php, port: http}
+            periodSeconds: 5
+            failureThreshold: 60
+          readinessProbe:
+            httpGet: {path: /readyz.php, port: http}
+            periodSeconds: 10
+            timeoutSeconds: 5
+          livenessProbe:
+            httpGet: {path: /healthz.php, port: http}
+            periodSeconds: 20
+            timeoutSeconds: 5
+          volumeMounts:
+            - {name: content, mountPath: /var/www/html}
+      volumes:
+        - name: content
+          persistentVolumeClaim: {claimName: "{{ .Release.Name }}-content"}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Release.Name }}-store
+spec:
+  selector: {app: "{{ .Release.Name }}-store"}
+  ports: [{name: http, port: 80, targetPort: http}]
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ .Release.Name }}-store
+spec:
+  ingressClassName: {{ .Values.store.ingressClass }}
+  {{- if .Values.store.tlsSecret }}
+  tls:
+    - hosts: [{{ .Values.store.host | quote }}]
+      secretName: {{ .Values.store.tlsSecret }}
+  {{- end }}
+  rules:
+    - host: {{ .Values.store.host | quote }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ .Release.Name }}-store
+                port: {number: 80}
+

@@ -1,0 +1,21 @@
+store:
+  image: urumi-store:0.1.0
+  imagePullPolicy: IfNotPresent
+  host: store.localhost
+  url: http://store.localhost:8080
+  ingressClass: traefik
+  tlsSecret: ""
+  secretName: urumi-store-secrets
+  storageClass: local-path
+  contentSize: 2Gi
+  resources:
+    requests: {cpu: 100m, memory: 256Mi}
+    limits: {cpu: "1", memory: 768Mi}
+database:
+  image: mariadb:11.4@sha256:1292844148b311e4ed4300022a996d39083f415a963e970cf47cad1b3b18e3a6
+  storageClass: local-path
+  size: 2Gi
+  resources:
+    requests: {cpu: 100m, memory: 256Mi}
+    limits: {cpu: "1", memory: 768Mi}
+

@@ -1,0 +1,66 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ .Release.Name }}-database
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: {{ .Values.database.storageClass | quote }}
+  resources:
+    requests:
+      storage: {{ .Values.database.size }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}-database
+spec:
+  replicas: 1
+  strategy: {type: Recreate}
+  selector:
+    matchLabels: {app: "{{ .Release.Name }}-database"}
+  template:
+    metadata:
+      labels: {app: "{{ .Release.Name }}-database"}
+    spec:
+      automountServiceAccountToken: false
+      containers:
+        - name: mariadb
+          image: {{ .Values.database.image | quote }}
+          ports: [{name: mysql, containerPort: 3306}]
+          env:
+            - {name: MARIADB_DATABASE, value: wordpress}
+            - {name: MARIADB_USER, value: wordpress}
+            - name: MARIADB_PASSWORD
+              valueFrom:
+                secretKeyRef: {name: "{{ .Values.store.secretName }}", key: db-password}
+            - name: MARIADB_ROOT_PASSWORD
+              valueFrom:
+                secretKeyRef: {name: "{{ .Values.store.secretName }}", key: db-root-password}
+          resources:
+            {{- toYaml .Values.database.resources | nindent 12 }}
+          startupProbe:
+            exec: {command: [healthcheck.sh, --connect, --innodb_initialized]}
+            periodSeconds: 5
+            failureThreshold: 60
+          readinessProbe:
+            exec: {command: [healthcheck.sh, --connect, --innodb_initialized]}
+            periodSeconds: 10
+            timeoutSeconds: 5
+          livenessProbe:
+            exec: {command: [healthcheck.sh, --connect]}
+            periodSeconds: 20
+            timeoutSeconds: 5
+          volumeMounts:
+            - {name: data, mountPath: /var/lib/mysql}
+      volumes:
+        - name: data
+          persistentVolumeClaim: {claimName: "{{ .Release.Name }}-database"}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Release.Name }}-database
+spec:
+  selector: {app: "{{ .Release.Name }}-database"}
+  ports: [{name: mysql, port: 3306, targetPort: mysql}]
+

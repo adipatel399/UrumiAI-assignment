@@ -1,0 +1,10 @@
+# Replace hostname, image location, and TLS Secret before deploying.
+store:
+  host: store.example.com
+  url: https://store.example.com
+  image: ghcr.io/YOUR_ACCOUNT/urumi-store:0.1.0
+  tlsSecret: urumi-store-tls
+  contentSize: 10Gi
+database:
+  size: 10Gi
+

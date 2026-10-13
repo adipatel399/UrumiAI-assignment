@@ -1,0 +1,5 @@
+store:
+  host: store.localhost
+  url: http://store.localhost:8080
+  image: urumi-store:0.1.0
+

@@ -49,4 +49,3 @@ manifest = {'apiVersion':'v1', 'kind':'Secret',
             'type':'Opaque', 'stringData': {k:v for k,v in data.items() if k != 'SERVICE_USER_PASSWORD'}}
 subprocess.run(['kubectl','apply','-f','-'], input=json.dumps(manifest), text=True, check=True)
 print('MCP credentials applied. Private backup is in .local; secret values not printed.')
-

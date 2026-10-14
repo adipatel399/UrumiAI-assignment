@@ -1,6 +1,6 @@
 # Urumi team MCP gateway
 
-The Kubernetes WooCommerce store, its internal MCP service, team gateway, supporting inventory/knowledge MCP services, and account/access backend are implemented. The React dashboard and LLM chat are not implemented yet.
+The Kubernetes WooCommerce store, its internal MCP service, team gateway, supporting inventory/knowledge MCP services, and account/access backend are implemented. The React dashboard is implemented; LLM chat is not implemented yet.
 
 See [the store architecture](docs/store-architecture.md), [WooCommerce MCP design](docs/woocommerce-mcp.md), and [requirements checklist](docs/requirements.md).
 
@@ -69,11 +69,11 @@ For an existing store, build/deploy only MCP with `bash scripts/local-mcp-up.sh`
 - MCP endpoint: `http://gateway.localhost:8080/mcp`
 - Account/administration API: `http://gateway.localhost:8080/api`
 - Bootstrap admin credentials: private ignored `.local/platform-credentials.json`.
-- The interface is an API at this point; visiting `/` does not show a dashboard yet.
+- Dashboard: open `http://gateway.localhost:8080/` and sign in with the private bootstrap admin credentials.
 
 Login with `POST /api/login` and JSON `{ "email": "...", "password": "..." }`. It sets an HttpOnly session cookie and returns a CSRF token. Send the cookie and `X-CSRF-Token` for mutations. Create a personal client key with `POST /api/keys` and `{ "name": "My MCP client" }`; copy the returned key once. Configure an external MCP client with the gateway URL and `Authorization: Bearer YOUR_USER_KEY`. Refresh the client's tool list after server or permission changes; direct calls always enforce current authorization.
 
-Admin routes manage `/api/servers`, `/api/members`, `/api/invitations`, `/api/keys`, and `/api/audit`. Members can manage their own keys and inspect `/api/tools`. Invitation acceptance uses `POST /api/invitations/accept` with token/password; the browser acceptance page will be added with the dashboard.
+Admin routes manage `/api/servers`, `/api/members`, `/api/invitations`, `/api/keys`, and `/api/audit`. Members can manage their own keys and inspect `/api/tools`. Invitation acceptance uses `POST /api/invitations/accept` with token/password; the returned invitation link opens the dashboard acceptance form.
 
 There are eight default admin tools and six member tools. Store writes are admin-only. `inventory__search` and `knowledge__search` prove same-name routing. Inventory is synthetic demo data, not a stock synchronization service.
 

@@ -1,6 +1,6 @@
 # Gateway architecture and tradeoffs
 
-The gateway is an MCP server to external clients and an MCP client to registered upstreams. One public endpoint aggregates WooCommerce, demo inventory, and store knowledge. The dashboard API shares the backend; the React interface and LLM chat are not implemented yet.
+The gateway is an MCP server to external clients and an MCP client to registered upstreams. One public endpoint aggregates WooCommerce, demo inventory, and store knowledge. The dashboard API shares the backend; the React dashboard is available; LLM chat remains unimplemented.
 
 ## Discovery and routing
 

@@ -1,4 +1,5 @@
 import express from 'express';
+import { fileURLToPath } from 'node:url';
 import { z } from 'zod';
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
@@ -67,6 +68,8 @@ function parse<T>(schema: z.ZodType<T>, value: unknown): T {
 const safeUser = (user: Principal) => ({ id: user.id, email: user.email, role: user.role });
 export function createGateway(db: Database, upstreams: Upstreams) {
   const app = express();
+  app.use(express.static(fileURLToPath(new URL('../ui/', import.meta.url))));
+  app.get('/invite', (_req,res)=>res.sendFile(fileURLToPath(new URL('../ui/index.html',import.meta.url))));
   app.disable('x-powered-by');
   app.use(express.json({ limit: '64kb' }));
   const config = db.config;

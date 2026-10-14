@@ -8,7 +8,7 @@ Statuses describe demonstrated behavior, not just files present. See the store a
 | Same charts with local/production values | Both configurations render; VPS not deployed |
 | Store and database persistent storage | Verified after replacing both pods |
 | Checkout and order visible in admin | Browser COD order #12; authenticated admin page verified |
-| Stable store and dashboard Ingress | Store Ingress created; dashboard pending |
+| Stable store and dashboard Ingress | Store and dashboard Ingress available |
 | Probes, requests and limits | Store, both databases, gateway and three MCP services configured and healthy |
 | Secrets absent from source | Generated credentials ignored; Secret applied |
 | Five handwritten WooCommerce MCP tools | Implemented; all five verified against the real store |
@@ -16,9 +16,9 @@ Statuses describe demonstrated behavior, not just files present. See the store a
 | Three registered upstreams | WooCommerce, inventory and knowledge verified through gateway |
 | Aggregate discovery and correct routing | SDK client sees eight admin tools; cross-server calls verified |
 | Tool collisions, timeouts and failure isolation | Namespaced search tools, controlled timeout and actual outage/recovery verified |
-| Admin/member identity and invitations | API login/session, invite/accept, one-time acceptance, roles verified; UI pending |
+| Admin/member identity and invitations | API login/session, invitations and role-based dashboard implemented |
 | Per-user hashed API keys and immediate revocation | Verified on existing SDK connection; revocation persists across restarts |
-| User-attributed audit log and dashboard | Durable audit and admin API verified; dashboard view pending |
+| User-attributed audit log and dashboard | Durable audit API and dashboard view implemented |
 | Chat tool loop through gateway | Planned |
 | Two-user external MCP acceptance flow | Two SDK clients verified with only gateway URL and own keys; final GUI client/video flow pending |
 | Stand-out: tool permissions | Member write tools hidden and direct calls rejected; admin writes verified |

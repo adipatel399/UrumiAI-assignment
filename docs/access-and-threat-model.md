@@ -10,7 +10,7 @@ Passwords use asynchronous scrypt with independent random salts. Per-user API ke
 
 Dashboard login issues an HttpOnly, SameSite=Strict session cookie; production uses Secure cookies. The database stores only the session hash with a 24-hour expiry. Session-authenticated mutations require an `X-CSRF-Token` derived from the session and server secret. The login/me response supplies that CSRF token. Logout removes the server-side session. Session state does not replace per-request role/active checks. Bearer-authenticated requests do not rely on cookies and do not require the cookie CSRF token.
 
-Invitations contain a one-time hashed token, a role and email assigned by the admin, and a 48-hour expiry. Acceptance uses a transaction and row lock so concurrent/repeated acceptance cannot create multiple accounts. Copyable invitation links are returned; email sending and the acceptance page are not yet implemented. Public login has an in-memory attempt limit; it is not a distributed rate limiter and currently groups traffic by the observed source IP.
+Invitations contain a one-time hashed token, a role and email assigned by the admin, and a 48-hour expiry. Acceptance uses a transaction and row lock so concurrent/repeated acceptance cannot create multiple accounts. Copyable invitation links are returned; the dashboard supplies the acceptance page; email sending is not implemented. Public login has an in-memory attempt limit; it is not a distributed rate limiter and currently groups traffic by the observed source IP.
 
 ## Audit
 
@@ -42,4 +42,4 @@ Members share authorized store data as a team. This is not per-customer or per-s
 
 ## Remaining production work
 
-The React dashboard and chat remain unimplemented. Local transport uses HTTP on loopback/internal networks; remote traffic needs TLS. Internal transport encryption, stronger DNS pinning, credential rotation procedures, backup/restore, security metrics and shared rate limiting still need production attention. One database replica and local-path disks are not highly available.
+The dashboard is implemented; chat remains unimplemented. Local transport uses HTTP on loopback/internal networks; remote traffic needs TLS. Internal transport encryption, stronger DNS pinning, credential rotation procedures, backup/restore, security metrics and shared rate limiting still need production attention. One database replica and local-path disks are not highly available.

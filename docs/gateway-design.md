@@ -1,0 +1,53 @@
+# Gateway architecture and tradeoffs
+
+The gateway is an MCP server to external clients and an MCP client to registered upstreams. One public endpoint aggregates WooCommerce, demo inventory, and store knowledge. The dashboard API shares the backend; the React interface and LLM chat are not implemented yet.
+
+## Discovery and routing
+
+Upstream URLs, credentials, enabled flags, and member-readable tool names are persisted in PostgreSQL. Initial registrations are seeded once; a durable marker prevents deleted defaults from reappearing on restart. Display-name edits do not change stable server slugs.
+
+The public name is `server-slug__original-tool-name`, for example `inventory__search` and `knowledge__search`. Unusually long or invalid names use a stable hash suffix within the 64-character limit. Routing uses discovered original names, not arbitrary paths supplied by the caller.
+
+Each upstream has an independent SDK client, cached catalog, bounded connection/discovery deadline, and bounded call timeout. Background refresh runs every 15 seconds. Discovery reads cached catalogs and current database authorization/enabled state; it does not wait for upstream network calls. Failed refresh retains a previously discovered catalog, allowing useful unreachable errors. If the gateway has never discovered an unavailable server, it cannot expose that server's unknown tools.
+
+Disabled or removed servers disappear on the next tool-list request and are rejected if called using an old name. Clients that cache tool menus must refresh/reconnect; this stateless endpoint does not publish a persistent `tools/list_changed` event stream. Authorization does not depend on that UI refresh.
+
+Streamable HTTP uses a fresh server/transport per POST with JSON responses. User credentials are verified on every request, including requests from an already connected SDK client. GET/DELETE MCP requests return 405. The current deployment uses one replica; distributed rate limiting and multi-replica behavior are not claimed.
+
+## Supporting services
+
+Inventory exposes `search` and `get_stock`; knowledge exposes `search`. Inventory is explicitly synthetic, with a seeded stock count and reorder threshold for the demo SKU; it is not synchronized with WooCommerce. Knowledge supplies test payment/shipping guidance. These services intentionally share a tool name to exercise collision handling.
+
+An example workflow retrieves store products and consults inventory by SKU, then reads store guidance. The SDK integration check exercises cross-service calls; the natural-language prompt and model loop will be demonstrated after chat is implemented.
+
+## Storage and deployment
+
+PostgreSQL is separate from the WooCommerce MariaDB database. Schema initialization is transactional and protected by a PostgreSQL advisory lock. The initial schema version is recorded; future schema changes must be explicit migrations. Bootstrap does not overwrite existing passwords, server edits, disables, or removals.
+
+Helm deploys the gateway, PostgreSQL, inventory, and knowledge as distinct workloads. The application image contains their common runtime, selected through a mode variable; their pods and network policies are independent. Custom containers run non-root with read-only root filesystems, dropped capabilities, no privilege escalation, and no Kubernetes API token. Every workload has probes and resource requests/limits.
+
+The platform database PVC has a Helm retention annotation. Disabling/uninstalling the platform does not automatically destroy this claim; explicit deletion and backups require operator care. Retention is not replication, backup, or high availability.
+
+Local URLs use `*.localhost`, with Ingress on loopback port 8080. Production values change domains, image registry, TLS Secrets, secure cookies, and disk sizes. Production values are examples; Azure deployment has not occurred.
+
+## Network boundaries
+
+Only the gateway is public through Ingress. Internal MCP ingress accepts gateway-labeled pods and also requires upstream bearer credentials. Gateway ingress admits Traefik. Gateway egress allows DNS, its PostgreSQL database, the three internal MCP Services, and external HTTPS with private/reserved IPv4 ranges excluded. It cannot call WordPress or either store database directly. Supporting services have no outbound network access; WooCommerce MCP reaches only DNS and WordPress.
+
+An administrator can add public HTTPS upstreams with optional static header or bearer credentials. Additional trusted internal hosts need explicit server configuration and NetworkPolicy changes. Credentials, fragments and query parameters embedded in registration URLs are rejected. External IPv6 destinations are conservatively rejected for now. Redirects are refused.
+
+Initial DNS checks and egress rules block common SSRF destinations, including cloud metadata. They are not a complete DNS-pinning solution. Stronger resolver pinning, transport encryption and external integration compatibility are part of remaining security work.
+
+## Verification
+
+`bash scripts/check-platform-local.sh` starts a disposable real PostgreSQL instance and runs the full protocol/access integration tests. Ordinary `npm test` skips this database-dependent test unless its test database environment is supplied.
+
+`python3 scripts/check-platform-cluster.py` verifies two users and the real store, eight admin tools versus six member tools, collision routing, cross-server calls, disabling, revocation on an existing connection, audit attribution, a controlled inventory outage/recovery, and database/gateway restart persistence. It deliberately changes local demo state and retains one gateway-created demo product. It restores inventory's replica count in a finally block. Use only the dedicated local cluster.
+
+External clients use `http://gateway.localhost:8080/mcp` and their own `Authorization: Bearer <user-key>` header. They receive no upstream credentials. HTTPS is required for a remote deployment.
+
+## Primary references
+
+- [MCP TypeScript client guide](https://ts.sdk.modelcontextprotocol.io/client)
+- [MCP TypeScript server guide](https://ts.sdk.modelcontextprotocol.io/server)
+- [node-postgres transactions](https://node-postgres.com/features/transactions)

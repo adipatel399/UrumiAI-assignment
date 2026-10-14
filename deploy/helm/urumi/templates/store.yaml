@@ -95,4 +95,3 @@ spec:
               service:
                 name: {{ .Release.Name }}-store
                 port: {number: 80}
-

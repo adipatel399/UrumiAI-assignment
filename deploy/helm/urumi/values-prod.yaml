@@ -10,4 +10,11 @@ database:
 woocommerceMcp:
   enabled: true
   image: ghcr.io/YOUR_ACCOUNT/urumi-woocommerce-mcp:0.1.0
-
+platform:
+  enabled: true
+  image: ghcr.io/YOUR_ACCOUNT/urumi-platform:0.1.0
+  host: gateway.example.com
+  url: https://gateway.example.com
+  cookieSecure: true
+  tlsSecret: urumi-gateway-tls
+  databaseSize: 10Gi

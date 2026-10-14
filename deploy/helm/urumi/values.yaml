@@ -27,4 +27,17 @@ woocommerceMcp:
   resources:
     requests: {cpu: 50m, memory: 64Mi}
     limits: {cpu: 500m, memory: 192Mi}
-
+platform:
+  enabled: false
+  image: urumi-platform:0.1.0
+  host: gateway.localhost
+  url: http://gateway.localhost:8080
+  cookieSecure: false
+  tlsSecret: ""
+  timeoutMs: 10000
+  resources:
+    requests: {cpu: 100m, memory: 128Mi}
+    limits: {cpu: "1", memory: 512Mi}
+  databaseImage: postgres:17-bookworm@sha256:3645570cccdfa447589da9f57dd740faa29b30938e861289a5574b6ca6b03826
+  databaseSize: 2Gi
+  databaseStorageClass: local-path

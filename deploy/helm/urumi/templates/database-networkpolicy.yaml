@@ -11,4 +11,3 @@ spec:
         - podSelector:
             matchLabels: {app: "{{ .Release.Name }}-store"}
       ports: [{protocol: TCP, port: 3306}]
-

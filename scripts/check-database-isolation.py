@@ -33,4 +33,3 @@ try:
     run('logs', '-n', 'urumi', name)
 finally:
     run('delete', 'pod', '-n', 'urumi', name, '--ignore-not-found', '--wait=false')
-

@@ -14,4 +14,3 @@ kubectl exec -n urumi deployment/urumi-store -- wp wc product list \
   --allow-root --user=storeadmin --fields=id,name,sku,price --format=table
 kubectl get pods,pvc,services,ingress,networkpolicies -n urumi
 echo 'Infrastructure checks complete. Checkout and persistence must also be verified.'
-

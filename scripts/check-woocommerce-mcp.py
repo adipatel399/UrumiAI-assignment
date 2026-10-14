@@ -1,12 +1,17 @@
 #!/usr/bin/env python3
 """Exercise the internal MCP service without publishing or port-forwarding it."""
-import json, subprocess, uuid
+import json, os, subprocess, uuid
 
 def run(*args, **kwargs):
     return subprocess.run(['kubectl', *args], text=True, check=True, **kwargs)
 
 if run('config', 'current-context', capture_output=True).stdout.strip() != 'k3d-urumi':
     raise SystemExit('Select k3d-urumi before running local integration checks.')
+gateway = subprocess.run(['kubectl','get','deployment/urumi-gateway','-n','urumi'],capture_output=True)
+if gateway.returncode == 0:
+    print('Gateway installed: verifying store tools through the gateway boundary.')
+    subprocess.run(['node','services/platform/dist/test/cluster.js'],env={**os.environ,'CHECK_STAGE':'baseline'},check=True)
+    raise SystemExit(0)
 run('rollout','status','deployment/urumi-store','-n','urumi','--timeout=180s')
 run('rollout','status','deployment/urumi-woocommerce-mcp','-n','urumi','--timeout=180s')
 image = run('get', 'deployment/urumi-woocommerce-mcp', '-n', 'urumi',

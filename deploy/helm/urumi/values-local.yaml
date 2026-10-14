@@ -4,4 +4,3 @@ store:
   image: urumi-store:0.1.0
 woocommerceMcp:
   enabled: true
-

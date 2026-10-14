@@ -1,0 +1,218 @@
+{{- if .Values.platform.enabled }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ .Release.Name }}-platform-database
+  annotations:
+    helm.sh/resource-policy: keep
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: {{ .Values.platform.databaseStorageClass | quote }}
+  resources:
+    requests: {storage: {{ .Values.platform.databaseSize }}}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}-platform-database
+spec:
+  replicas: 1
+  strategy: {type: Recreate}
+  selector:
+    matchLabels: {app: "{{ .Release.Name }}-platform-database"}
+  template:
+    metadata:
+      labels: {app: "{{ .Release.Name }}-platform-database"}
+    spec:
+      automountServiceAccountToken: false
+      containers:
+        - name: postgres
+          image: {{ .Values.platform.databaseImage | quote }}
+          env:
+            - {name: POSTGRES_USER, value: urumi}
+            - {name: POSTGRES_DB, value: urumi}
+            - {name: PGDATA, value: /var/lib/postgresql/data/pgdata}
+          envFrom:
+            - secretRef: {name: "{{ .Release.Name }}-platform-database-secrets"}
+          ports: [{name: postgres, containerPort: 5432}]
+          resources:
+            requests: {cpu: 100m, memory: 128Mi}
+            limits: {cpu: "1", memory: 512Mi}
+          startupProbe:
+            exec: {command: [pg_isready, -U, urumi, -d, urumi]}
+            periodSeconds: 5
+            failureThreshold: 60
+          readinessProbe:
+            exec: {command: [pg_isready, -U, urumi, -d, urumi]}
+            periodSeconds: 10
+          livenessProbe:
+            exec: {command: [pg_isready, -U, urumi, -d, urumi]}
+            periodSeconds: 20
+          volumeMounts: [{name: data, mountPath: /var/lib/postgresql/data}]
+      volumes:
+        - name: data
+          persistentVolumeClaim: {claimName: "{{ .Release.Name }}-platform-database"}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Release.Name }}-platform-database
+spec:
+  selector: {app: "{{ .Release.Name }}-platform-database"}
+  ports: [{port: 5432, targetPort: postgres}]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ .Release.Name }}-platform-database
+spec:
+  podSelector:
+    matchLabels: {app: "{{ .Release.Name }}-platform-database"}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels: {app: "{{ .Release.Name }}-gateway"}
+      ports: [{protocol: TCP, port: 5432}]
+{{- range $mode := list "gateway" "inventory-mcp" "knowledge-mcp" }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $.Release.Name }}-{{ $mode }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app: "{{ $.Release.Name }}-{{ $mode }}"}
+  template:
+    metadata:
+      labels: {app: "{{ $.Release.Name }}-{{ $mode }}"}
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: application
+          image: {{ $.Values.platform.image | quote }}
+          imagePullPolicy: IfNotPresent
+          ports: [{name: http, containerPort: 3000}]
+          env:
+            {{- if eq $mode "gateway" }}
+            - {name: PGHOST, value: "{{ $.Release.Name }}-platform-database"}
+            - {name: PGUSER, value: urumi}
+            - {name: PGDATABASE, value: urumi}
+            - {name: PUBLIC_URL, value: {{ $.Values.platform.url | quote }}}
+            - {name: COOKIE_SECURE, value: {{ $.Values.platform.cookieSecure | quote }}}
+            - {name: UPSTREAM_TIMEOUT_MS, value: {{ $.Values.platform.timeoutMs | quote }}}
+            {{- else }}
+            - {name: SERVICE_MODE, value: {{ trimSuffix "-mcp" $mode | quote }}}
+            {{- end }}
+          envFrom:
+            - secretRef:
+                name: {{ if eq $mode "gateway" }}{{ $.Release.Name }}-platform-secrets{{ else }}{{ $.Release.Name }}-support-secrets{{ end }}
+          resources:
+            {{- toYaml $.Values.platform.resources | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}
+          startupProbe:
+            httpGet: {path: /healthz, port: http}
+            periodSeconds: 5
+            failureThreshold: 60
+          readinessProbe:
+            httpGet: {path: /readyz, port: http}
+            periodSeconds: 10
+            timeoutSeconds: 5
+          livenessProbe:
+            httpGet: {path: /healthz, port: http}
+            periodSeconds: 20
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $.Release.Name }}-{{ $mode }}
+spec:
+  selector: {app: "{{ $.Release.Name }}-{{ $mode }}"}
+  ports: [{name: http, port: 3000, targetPort: http}]
+{{- if ne $mode "gateway" }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $.Release.Name }}-{{ $mode }}
+spec:
+  podSelector:
+    matchLabels: {app: "{{ $.Release.Name }}-{{ $mode }}"}
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels: {app: "{{ $.Release.Name }}-gateway"}
+      ports: [{protocol: TCP, port: 3000}]
+  egress: []
+{{- end }}
+{{- end }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ .Release.Name }}-gateway
+spec:
+  podSelector:
+    matchLabels: {app: "{{ .Release.Name }}-gateway"}
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels: {kubernetes.io/metadata.name: kube-system}
+          podSelector:
+            matchLabels: {app.kubernetes.io/name: traefik}
+      ports: [{protocol: TCP, port: 3000}]
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels: {kubernetes.io/metadata.name: kube-system}
+          podSelector:
+            matchLabels: {k8s-app: kube-dns}
+      ports: [{protocol: UDP, port: 53}, {protocol: TCP, port: 53}]
+    - to:
+        - podSelector:
+            matchLabels: {app: "{{ .Release.Name }}-platform-database"}
+      ports: [{protocol: TCP, port: 5432}]
+    - to:
+        - podSelector:
+            matchExpressions:
+              - key: app
+                operator: In
+                values: ["{{ .Release.Name }}-woocommerce-mcp", "{{ .Release.Name }}-inventory-mcp", "{{ .Release.Name }}-knowledge-mcp"]
+      ports: [{protocol: TCP, port: 3000}]
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except: [0.0.0.0/8, 10.0.0.0/8, 100.64.0.0/10, 127.0.0.0/8, 169.254.0.0/16, 172.16.0.0/12, 192.168.0.0/16, 224.0.0.0/4, 240.0.0.0/4]
+      ports: [{protocol: TCP, port: 443}]
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ .Release.Name }}-gateway
+spec:
+  ingressClassName: {{ .Values.store.ingressClass }}
+  {{- if .Values.platform.tlsSecret }}
+  tls:
+    - hosts: [{{ .Values.platform.host | quote }}]
+      secretName: {{ .Values.platform.tlsSecret }}
+  {{- end }}
+  rules:
+    - host: {{ .Values.platform.host | quote }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service: {name: "{{ .Release.Name }}-gateway", port: {number: 3000}}
+{{- end }}

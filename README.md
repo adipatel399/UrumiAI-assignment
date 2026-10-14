@@ -1,8 +1,10 @@
 # Urumi team MCP gateway
 
-The Kubernetes WooCommerce store and its internal MCP service are implemented. The team MCP gateway, dashboard, and chat are planned and are not implemented yet.
+The Kubernetes WooCommerce store, its internal MCP service, team gateway, supporting inventory/knowledge MCP services, and account/access backend are implemented. The React dashboard and LLM chat are not implemented yet.
 
 See [the store architecture](docs/store-architecture.md), [WooCommerce MCP design](docs/woocommerce-mcp.md), and [requirements checklist](docs/requirements.md).
+
+Gateway details: [architecture and tradeoffs](docs/gateway-design.md), [access and threat model](docs/access-and-threat-model.md).
 
 ## Local setup
 
@@ -17,6 +19,8 @@ bash scripts/local-up.sh
 This creates a dedicated `urumi` cluster, selects its context, creates namespace `urumi`, generates Secrets, builds/imports the store image, installs Helm resources, and bootstraps WooCommerce. Rerunning preserves existing credentials and avoids duplicating the demo product.
 
 It then provisions a dedicated WooCommerce service credential and deploys our handwritten MCP server. No LLM provider or paid cloud resource is needed for this setup.
+
+Finally it provisions the platform secrets, PostgreSQL, gateway, and two supporting MCP services. Setup preserves existing platform registrations, accounts, and keys. The platform database PVC is retained if its Helm resources are disabled/uninstalled; do not confuse this retention with a backup.
 
 Local setup also starts an existing stopped cluster and replaces pods to load rebuilt development images. It deploys the store before enabling MCP, so credentials can be provisioned on a fresh installation. This causes short local interruptions. Production will use immutable release image tags instead.
 
@@ -54,11 +58,28 @@ Run `python3 scripts/check-database-isolation.py` to verify an unrelated pod is 
 
 ## WooCommerce MCP
 
-The internal endpoint is `http://urumi-woocommerce-mcp:3000/mcp`. It has no public Ingress and only accepts the gateway's network identity plus its upstream bearer credential. Do not configure an external MCP client to access this service directly; the public gateway endpoint will be added separately.
+The internal endpoint is `http://urumi-woocommerce-mcp:3000/mcp`. It has no public Ingress and only accepts the gateway's network identity plus its upstream bearer credential. External clients connect to the public gateway instead.
 
 Tools: `list_products`, `create_product`, `list_orders`, `get_order`, and `update_order_status`. Credentials live in `urumi-woocommerce-mcp-secrets`, with a private ignored local backup. MCP uses stateless Streamable HTTP and calls WooCommerce REST API v3 with signed requests.
 
 For an existing store, build/deploy only MCP with `bash scripts/local-mcp-up.sh`. Run `npm run build` and `npm test` for local checks. After placing a demo order, run `python3 scripts/check-woocommerce-mcp.py` for the real-cluster integration check. It creates/deletes its own test product and temporarily changes/restores a test order's status; use only the local demo store. See [MCP design and security details](docs/woocommerce-mcp.md).
+
+## Team gateway and accounts
+
+- MCP endpoint: `http://gateway.localhost:8080/mcp`
+- Account/administration API: `http://gateway.localhost:8080/api`
+- Bootstrap admin credentials: private ignored `.local/platform-credentials.json`.
+- The interface is an API at this point; visiting `/` does not show a dashboard yet.
+
+Login with `POST /api/login` and JSON `{ "email": "...", "password": "..." }`. It sets an HttpOnly session cookie and returns a CSRF token. Send the cookie and `X-CSRF-Token` for mutations. Create a personal client key with `POST /api/keys` and `{ "name": "My MCP client" }`; copy the returned key once. Configure an external MCP client with the gateway URL and `Authorization: Bearer YOUR_USER_KEY`. Refresh the client's tool list after server or permission changes; direct calls always enforce current authorization.
+
+Admin routes manage `/api/servers`, `/api/members`, `/api/invitations`, `/api/keys`, and `/api/audit`. Members can manage their own keys and inspect `/api/tools`. Invitation acceptance uses `POST /api/invitations/accept` with token/password; the browser acceptance page will be added with the dashboard.
+
+There are eight default admin tools and six member tools. Store writes are admin-only. `inventory__search` and `knowledge__search` prove same-name routing. Inventory is synthetic demo data, not a stock synchronization service.
+
+For an existing store/MCP setup run `bash scripts/local-platform-up.sh`. Full local verification: `bash scripts/check-platform-local.sh` (disposable PostgreSQL integration tests), followed by `python3 scripts/check-platform-cluster.py` (real cluster, two users, outage/recovery and persistence). The latter retains a gateway-created virtual demo product and saves private demo login/key details in `.local/gateway-demo.json`; it revokes the tested member key. It requires the local test order and interrupts inventory/gateway briefly. Use only the local demo cluster.
+
+When a gateway is installed, the earlier WooCommerce MCP verification script automatically tests through it. The old direct fixture-cleanup path is restricted by gateway egress policy; normal application and verification calls use the gateway boundary.
 
 ## Troubleshooting
 

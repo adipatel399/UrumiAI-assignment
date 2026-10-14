@@ -63,4 +63,3 @@ metadata:
 spec:
   selector: {app: "{{ .Release.Name }}-database"}
   ports: [{name: mysql, port: 3306, targetPort: mysql}]
-

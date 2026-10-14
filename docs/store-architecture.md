@@ -94,4 +94,3 @@ Limits: one replica, node-local storage, no outbound email or TLS locally. VPS c
 - [k3d service exposure](https://k3d.io/stable/usage/exposing_services/): local port mappings and ingress.
 - [WooCommerce cash on delivery](https://woocommerce.com/document/cash-on-delivery/): test-friendly payment setup.
 - [WooCommerce command-line interface](https://developer.woocommerce.com/docs/wc-cli/using-wc-cli): setup and inspection.
-

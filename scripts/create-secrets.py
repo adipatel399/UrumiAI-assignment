@@ -24,4 +24,3 @@ manifest = {'apiVersion': 'v1', 'kind': 'Secret',
             'type': 'Opaque', 'stringData': data}
 subprocess.run(['kubectl', 'apply', '-f', '-'], input=json.dumps(manifest), text=True, check=True)
 print('Credentials saved privately in .local/store-credentials.json; values not printed.')
-

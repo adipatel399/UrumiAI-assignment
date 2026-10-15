@@ -1,10 +1,10 @@
 # Urumi team MCP gateway
 
-The Kubernetes WooCommerce store, its internal MCP service, team gateway, supporting inventory/knowledge MCP services, and account/access backend are implemented. The React dashboard is implemented; LLM chat is not implemented yet.
+The Kubernetes WooCommerce store, its internal MCP service, team gateway, supporting inventory/knowledge MCP services, and account/access backend are implemented. The React dashboard includes a user-scoped chat tool loop, administration, audit, and per-server diagnostics. Chat requires a server-side provider key; the rest of the system works without one.
 
 See [the store architecture](docs/store-architecture.md), [WooCommerce MCP design](docs/woocommerce-mcp.md), and [requirements checklist](docs/requirements.md).
 
-Gateway details: [architecture and tradeoffs](docs/gateway-design.md), [access and threat model](docs/access-and-threat-model.md).
+Gateway details: [architecture and tradeoffs](docs/gateway-design.md), [access and threat model](docs/access-and-threat-model.md), [chat setup and operations](docs/chat-and-operations.md).
 
 ## Local setup
 
@@ -80,6 +80,16 @@ There are eight default admin tools and six member tools. Store writes are admin
 For an existing store/MCP setup run `bash scripts/local-platform-up.sh`. Full local verification: `bash scripts/check-platform-local.sh` (disposable PostgreSQL integration tests), followed by `python3 scripts/check-platform-cluster.py` (real cluster, two users, outage/recovery and persistence). The latter retains a gateway-created virtual demo product and saves private demo login/key details in `.local/gateway-demo.json`; it revokes the tested member key. It requires the local test order and interrupts inventory/gateway briefly. Use only the local demo cluster.
 
 When a gateway is installed, the earlier WooCommerce MCP verification script automatically tests through it. The old direct fixture-cleanup path is restricted by gateway egress policy; normal application and verification calls use the gateway boundary.
+
+## Chat and diagnostics
+
+Open **Chat** after signing in. Run `python3 scripts/configure-chat.py`, edit the generated ignored `.local/llm-credentials.json` privately, and rerun the helper to provision a provider key. Default configuration uses Groq's free-plan-capable tool model; account quotas apply. The key stays server-side. Reads are enabled by default; use the per-message checkbox for requested changes. Members still cannot use admin write tools. Chat activity shows actual gateway calls, outcomes, and selected results. History is kept only in page memory.
+
+Administrators can open **Metrics** for each server's calls, failures, average/p95 latency and diagnostics. Authenticated `GET /metrics` exports Prometheus counters/gauge/histogram; no separate collector installation is required or claimed. Run `python3 scripts/check-security.py` for real network-boundary checks. The namespace is default deny with explicit application/DNS flows, and external upstream connections validate the actual socket DNS resolution and reject redirects/private destinations.
+
+Live local chat verification created Chat Demo Notebook (product #17), a guest COD checkout created order #19 for INR 249.00, and chat retrieved it using the store’s today filter. Inventory/knowledge calls and member write refusal were also verified. Free-plan rate limits can interrupt final summaries after a tool has already completed; inspect activity before retrying writes.
+
+See [chat, operations, limits, and verification](docs/chat-and-operations.md) for setup, demonstration steps, provider data handling, scrape access, and known limitations.
 
 ## Troubleshooting
 

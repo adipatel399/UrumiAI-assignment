@@ -113,6 +113,11 @@ spec:
           envFrom:
             - secretRef:
                 name: {{ if eq $mode "gateway" }}{{ $.Release.Name }}-platform-secrets{{ else }}{{ $.Release.Name }}-support-secrets{{ end }}
+            {{- if eq $mode "gateway" }}
+            - secretRef:
+                name: {{ $.Values.platform.llmSecretName | quote }}
+                optional: true
+            {{- end }}
           resources:
             {{- toYaml $.Values.platform.resources | nindent 12 }}
           securityContext:

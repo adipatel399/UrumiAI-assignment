@@ -34,7 +34,7 @@ A member can still exercise every operation the gateway permits under a shared u
 
 ## Untrusted upstreams and team members
 
-An upstream may return dishonest descriptions, prompt-injection text, or malicious results. Treat descriptions/results as untrusted data, not as instructions that alter identity or permissions. The gateway authorizes tool names using trusted configuration and never grants write permission based on a server's self-reported annotations. The later chat implementation must preserve this boundary.
+An upstream may return dishonest descriptions, prompt-injection text, or malicious results. Treat descriptions/results as untrusted data, not as instructions that alter identity or permissions. The gateway authorizes tool names using trusted configuration and never grants write permission based on a server's self-reported annotations. Chat preserves this boundary with per-user MCP authentication, trusted tool allowlists, per-turn write approval, and bounded execution. Prompt instructions alone do not eliminate injection risk.
 
 A compromised upstream can misuse the credential already entrusted to it and falsify its own results. Gateway policy does not control what a compromised service does internally. Separate credentials and network restrictions reduce its access to other services; a compromised WooCommerce MCP has a write-capable store credential and therefore remains a serious store risk.
 
@@ -42,4 +42,4 @@ Members share authorized store data as a team. This is not per-customer or per-s
 
 ## Remaining production work
 
-The dashboard is implemented; chat remains unimplemented. Local transport uses HTTP on loopback/internal networks; remote traffic needs TLS. Internal transport encryption, stronger DNS pinning, credential rotation procedures, backup/restore, security metrics and shared rate limiting still need production attention. One database replica and local-path disks are not highly available.
+Dashboard chat and per-server metrics are implemented. Chat uses short-lived, session-bound user keys through the MCP endpoint; see [chat and operations](chat-and-operations.md). External destinations are validated during the actual socket DNS lookup and redirects are refused. Namespace-wide default-deny policies have explicit permitted paths and real enforcement checks. Local transport uses HTTP on loopback/internal networks; remote traffic needs TLS. Internal transport encryption, credential rotation procedures, backup/restore, audit retention, a metrics-only role, and shared rate limiting still need production attention. One database replica and local-path disks are not highly available.

@@ -94,3 +94,7 @@ Limits: one replica, node-local storage, no outbound email or TLS locally. VPS c
 - [k3d service exposure](https://k3d.io/stable/usage/exposing_services/): local port mappings and ingress.
 - [WooCommerce cash on delivery](https://woocommerce.com/document/cash-on-delivery/): test-friendly payment setup.
 - [WooCommerce command-line interface](https://developer.woocommerce.com/docs/wc-cli/using-wc-cli): setup and inspection.
+
+### Guest visibility verification
+
+A fresh logged-out browser on October 15, 2026 exposed WooCommerce's default Coming soon mode, which an administrator can bypass. Bootstrap now explicitly sets `woocommerce_coming_soon` to `no` for the runnable demo store. After applying that setting, a guest purchased the chat-created product #17 with fictional details/COD, creating order #19 for INR 249.00. Dashboard chat retrieved the same order with the configured store-day filter.

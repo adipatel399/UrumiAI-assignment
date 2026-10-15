@@ -31,3 +31,9 @@ CREATE TABLE IF NOT EXISTS audit_log(
 );
 CREATE INDEX IF NOT EXISTS audit_recent ON audit_log(timestamp DESC);
 INSERT INTO schema_migrations(version) VALUES(1) ON CONFLICT DO NOTHING;
+
+ALTER TABLE api_keys ADD COLUMN IF NOT EXISTS purpose text NOT NULL DEFAULT 'external';
+ALTER TABLE api_keys ADD COLUMN IF NOT EXISTS expires_at timestamptz;
+ALTER TABLE api_keys ADD COLUMN IF NOT EXISTS session_hash text;
+CREATE INDEX IF NOT EXISTS audit_server ON audit_log(server_id);
+INSERT INTO schema_migrations(version) VALUES(2) ON CONFLICT DO NOTHING;

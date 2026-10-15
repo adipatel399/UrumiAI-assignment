@@ -15,7 +15,10 @@ test('password verification, encrypted credentials, and tamper rejection', async
   assert(await passwordMatches('test-only-password', hash));
   assert(!(await passwordMatches('wrong', hash)));
   const key = 'ab'.repeat(32);
-  const value = { header: 'Authorization', value: 'Bearer test-only-credential' };
+  const value = {
+    header: 'Authorization',
+    value: 'Bearer test-only-credential',
+  };
   const ciphertext = encrypt(value, key);
   assert(!ciphertext.includes(value.value));
   assert.deepEqual(decrypt(ciphertext, key), value);
@@ -26,7 +29,10 @@ test('tool collisions and long names have stable distinct routes', () => {
   assert.equal(exposedName('inventory', 'search'), 'inventory__search');
   assert.notEqual(exposedName('inventory', 'search'), exposedName('knowledge', 'search'));
   assert(exposedName('store', 'x'.repeat(100)).length <= 64);
-  assert.equal(exposedName('store', 'x'.repeat(100)), exposedName('store', 'x'.repeat(100)));
+  assert.equal(
+    exposedName('store', 'x'.repeat(100)),
+    exposedName('store', 'x'.repeat(100)),
+  );
 });
 test('upstream destination policy rejects credentials, metadata and loopback', async () => {
   for (const url of [
@@ -37,8 +43,45 @@ test('upstream destination policy rejects credentials, metadata and loopback', a
   ])
     await assert.rejects(validateUpstream(url, ['urumi-woocommerce-mcp']));
   assert.equal(
-    (await validateUpstream('http://urumi-woocommerce-mcp:3000/mcp', ['urumi-woocommerce-mcp']))
-      .hostname,
+    (
+      await validateUpstream('http://urumi-woocommerce-mcp:3000/mcp', [
+        'urumi-woocommerce-mcp',
+      ])
+    ).hostname,
     'urumi-woocommerce-mcp',
+  );
+});
+
+test('DNS rebinding and mixed public/private answers are refused at socket lookup', async () => {
+  const { resolvePublic, publicAddress, destinationAgent } =
+    await import('../src/network.js');
+  for (const address of [
+    '127.0.0.1',
+    '169.254.169.254',
+    '10.42.0.1',
+    '100.100.100.200',
+    '::1',
+    '::ffff:127.0.0.1',
+    '192.0.0.1',
+    '198.18.0.1',
+    '203.0.113.1',
+  ])
+    assert(!publicAddress(address));
+  assert(publicAddress('8.8.8.8'));
+  const resolver = (async () => [
+    { address: '8.8.8.8', family: 4 },
+    { address: '127.0.0.1', family: 4 },
+  ]) as any;
+  await assert.rejects(resolvePublic('changed.example', resolver));
+  const agent = destinationAgent(new URL('http://localhost:3000'), []);
+  try {
+    await assert.rejects(
+      fetch('http://localhost:3000', { dispatcher: agent } as RequestInit),
+    );
+  } finally {
+    await agent.destroy();
+  }
+  await assert.rejects(
+    validateUpstream('http://urumi-woocommerce-mcp:80/mcp', ['urumi-woocommerce-mcp']),
   );
 });

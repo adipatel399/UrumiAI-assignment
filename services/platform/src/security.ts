@@ -7,7 +7,7 @@ import {
   createCipheriv,
   createDecipheriv,
 } from 'node:crypto';
-import { lookup } from 'node:dns/promises';
+import { resolvePublic } from './network.js';
 import { isIP } from 'node:net';
 const derive = (
   password: string,
@@ -16,7 +16,9 @@ const derive = (
   options: { N: number; r: number; p: number; maxmem: number },
 ) =>
   new Promise<Buffer>((resolve, reject) =>
-    scrypt(password, salt, size, options, (error, key) => (error ? reject(error) : resolve(key))),
+    scrypt(password, salt, size, options, (error, key) =>
+      error ? reject(error) : resolve(key),
+    ),
   );
 export const token = () => randomBytes(32).toString('base64url');
 export const digest = (value: string) => createHash('sha256').update(value).digest('hex');
@@ -67,28 +69,13 @@ export async function validateUpstream(value: string, allowed: string[]) {
     !['http:', 'https:'].includes(url.protocol)
   )
     throw new Error('Invalid upstream URL.');
-  if (allowed.includes(url.hostname)) return url;
+  if (allowed.includes(url.hostname)) {
+    if (!isIP(url.hostname) && (url.protocol !== 'http:' || url.port !== '3000'))
+      throw new Error('Trusted services must use HTTP port 3000.');
+    return url;
+  }
   if (url.protocol !== 'https:' || isIP(url.hostname) || (url.port && url.port !== '443'))
     throw new Error('External upstreams must use a public HTTPS hostname on port 443.');
-  const addresses = await lookup(url.hostname, { all: true });
-  if (
-    !addresses.length ||
-    addresses.some(({ address }) => {
-      // Conservative policy: reject IPv6 external destinations until pinned resolution is added.
-      if (isIP(address) !== 4) return true;
-      const [a, b] = address.split('.').map(Number);
-      return (
-        a === 0 ||
-        a === 10 ||
-        a === 127 ||
-        (a === 169 && b === 254) ||
-        (a === 172 && b >= 16 && b <= 31) ||
-        (a === 192 && b === 168) ||
-        (a === 100 && b >= 64 && b <= 127) ||
-        a >= 224
-      );
-    })
-  )
-    throw new Error('Upstream resolves to a prohibited network.');
+  await resolvePublic(url.hostname);
   return url;
 }

@@ -1,9 +1,14 @@
+import { chatInput, runChat } from './chat.js';
+import { metrics, prometheus } from './metrics.js';
 import express from 'express';
 import { fileURLToPath } from 'node:url';
 import { z } from 'zod';
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
-import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
+import {
+  CallToolRequestSchema,
+  ListToolsRequestSchema,
+} from '@modelcontextprotocol/sdk/types.js';
 import { Database, type Principal } from './database.js';
 import { Upstreams, exposedName, failure } from './upstreams.js';
 import {
@@ -31,16 +36,24 @@ const email = z
   .transform((x) => x.toLowerCase());
 const password = z.string().min(12).max(256);
 const id = z.uuid();
-const keyInput = z.object({ name: z.string().trim().min(1).max(100), user_id: id.optional() });
+const keyInput = z.object({
+  name: z.string().trim().min(1).max(100),
+  user_id: id.optional(),
+});
 const credential = z.object({
   header: z
     .string()
     .regex(/^[a-zA-Z0-9-]+$/)
     .refine(
       (x) =>
-        !['host', 'cookie', 'origin', 'connection', 'content-length', 'mcp-session-id'].includes(
-          x.toLowerCase(),
-        ) && !x.toLowerCase().startsWith('x-forwarded-'),
+        ![
+          'host',
+          'cookie',
+          'origin',
+          'connection',
+          'content-length',
+          'mcp-session-id',
+        ].includes(x.toLowerCase()) && !x.toLowerCase().startsWith('x-forwarded-'),
     ),
   value: z
     .string()
@@ -61,15 +74,36 @@ function parse<T>(schema: z.ZodType<T>, value: unknown): T {
   if (!result.success)
     throw new ApiError(
       400,
-      'Invalid input fields: ' + result.error.issues.map((x) => x.path.join('.')).join(', '),
+      'Invalid input fields: ' +
+        result.error.issues.map((x) => x.path.join('.')).join(', '),
     );
   return result.data;
 }
-const safeUser = (user: Principal) => ({ id: user.id, email: user.email, role: user.role });
-export function createGateway(db: Database, upstreams: Upstreams) {
+const safeUser = (user: Principal) => ({
+  id: user.id,
+  email: user.email,
+  role: user.role,
+});
+export function createGateway(
+  db: Database,
+  upstreams: Upstreams,
+  providerFetch?: typeof fetch,
+) {
   const app = express();
+  app.use((_req, res, next) => {
+    res.set({
+      'X-Content-Type-Options': 'nosniff',
+      'Referrer-Policy': 'no-referrer',
+      'X-Frame-Options': 'DENY',
+      'Content-Security-Policy':
+        "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'",
+    });
+    next();
+  });
   app.use(express.static(fileURLToPath(new URL('../ui/', import.meta.url))));
-  app.get('/invite', (_req,res)=>res.sendFile(fileURLToPath(new URL('../ui/index.html',import.meta.url))));
+  app.get('/invite', (_req, res) =>
+    res.sendFile(fileURLToPath(new URL('../ui/index.html', import.meta.url))),
+  );
   app.disable('x-powered-by');
   app.use(express.json({ limit: '64kb' }));
   const config = db.config;
@@ -87,7 +121,8 @@ export function createGateway(db: Database, upstreams: Upstreams) {
     }
   };
   const requireAdmin = (principal: Principal) => {
-    if (principal.role !== 'admin') throw new ApiError(403, 'Administrator access required.');
+    if (principal.role !== 'admin')
+      throw new ApiError(403, 'Administrator access required.');
   };
   async function audit(
     user: Principal | null,
@@ -118,17 +153,25 @@ export function createGateway(db: Database, upstreams: Upstreams) {
     if (bearer) {
       user = (
         await db.query(
-          'SELECT u.id,u.email,u.role,u.active,k.id AS key_id,k.revoked_at FROM api_keys k JOIN users u ON u.id=k.user_id WHERE k.token_hash=$1',
+          'SELECT u.id,u.email,u.role,u.active,k.id AS key_id,k.revoked_at,k.expires_at,k.purpose,k.session_hash,EXISTS(SELECT 1 FROM sessions s WHERE s.token_hash=k.session_hash AND s.expires_at>now()) AS session_valid FROM api_keys k JOIN users u ON u.id=k.user_id WHERE k.token_hash=$1',
           [digest(bearer)],
         )
       ).rows[0];
       if (user) {
         user = { ...user, keyId: user.key_id };
       }
-      if (!user || !user.active || user.revoked_at) {
+      if (
+        !user ||
+        !user.active ||
+        user.revoked_at ||
+        (user.expires_at && new Date(user.expires_at).getTime() <= Date.now()) ||
+        (user.purpose === 'chat' && (!mcp || !user.session_valid))
+      ) {
         if (mcp && req.body?.method === 'tools/call') {
           const name = String(req.body?.params?.name ?? 'unknown');
-          const row = (await upstreams.rows()).find((r) => name.startsWith(r.slug + '__'));
+          const row = (await upstreams.rows()).find((r) =>
+            name.startsWith(r.slug + '__'),
+          );
           await audit(user ?? null, name, 'rejected', row, 'INVALID_OR_REVOKED_KEY');
         }
         throw new ApiError(401, 'Invalid or revoked API key.');
@@ -175,6 +218,10 @@ export function createGateway(db: Database, upstreams: Upstreams) {
       res.status(503).json({ status: 'database unavailable' });
     }
   });
+  app.use('/api', (_req, res, next) => {
+    res.set('Cache-Control', 'no-store');
+    next();
+  });
   const attempts = new Map<string, { count: number; until: number }>();
   app.post('/api/login', async (req, res) => {
     const address = req.ip ?? 'unknown';
@@ -185,7 +232,10 @@ export function createGateway(db: Database, upstreams: Upstreams) {
       throw new ApiError(429, 'Too many login attempts; try later.');
     state.count++;
     attempts.set(address, state);
-    const input = parse(z.object({ email, password: z.string().min(1).max(256) }), req.body);
+    const input = parse(
+      z.object({ email, password: z.string().min(1).max(256) }),
+      req.body,
+    );
     const user = (
       await db.query('SELECT * FROM users WHERE email=$1 AND active=true', [input.email])
     ).rows[0];
@@ -206,10 +256,16 @@ export function createGateway(db: Database, upstreams: Upstreams) {
       maxAge: 86400000,
       path: '/',
     });
-    res.json({ user: safeUser(user), csrf_token: csrf(raw, config.ENCRYPTION_KEY) });
+    res.json({
+      user: safeUser(user),
+      csrf_token: csrf(raw, config.ENCRYPTION_KEY),
+    });
   });
   app.post('/api/invitations/accept', async (req, res) => {
-    const input = parse(z.object({ token: z.string().min(32).max(200), password }), req.body);
+    const input = parse(
+      z.object({ token: z.string().min(32).max(200), password }),
+      req.body,
+    );
     const hash = await passwordHash(input.password);
     const client = await db.pool.connect();
     try {
@@ -220,13 +276,16 @@ export function createGateway(db: Database, upstreams: Upstreams) {
           [digest(input.token)],
         )
       ).rows[0];
-      if (!invite) throw new ApiError(400, 'Invitation is invalid, expired, or already accepted.');
+      if (!invite)
+        throw new ApiError(400, 'Invitation is invalid, expired, or already accepted.');
       const inserted = await client.query(
         'INSERT INTO users(email,password_hash,role) VALUES($1,$2,$3) ON CONFLICT(email) DO NOTHING RETURNING id,email,role',
         [invite.email, hash, invite.role],
       );
       if (!inserted.rowCount) throw new ApiError(409, 'User already exists.');
-      await client.query('UPDATE invitations SET accepted_at=now() WHERE id=$1', [invite.id]);
+      await client.query('UPDATE invitations SET accepted_at=now() WHERE id=$1', [
+        invite.id,
+      ]);
       await client.query('COMMIT');
       res.status(201).json({ user: inserted.rows[0] });
     } catch (error) {
@@ -238,6 +297,7 @@ export function createGateway(db: Database, upstreams: Upstreams) {
   });
   app.use('/api', async (req, res, next) => {
     const user = await authenticate(req);
+    res.set('Cache-Control', 'no-store');
     res.locals.user = user;
     if (
       user.session &&
@@ -259,7 +319,8 @@ export function createGateway(db: Database, upstreams: Upstreams) {
   });
   app.post('/api/logout', async (req, res) => {
     const u = res.locals.user as Principal;
-    if (u.session) await db.query('DELETE FROM sessions WHERE token_hash=$1', [digest(u.session)]);
+    if (u.session)
+      await db.query('DELETE FROM sessions WHERE token_hash=$1', [digest(u.session)]);
     res.clearCookie('urumi_session', { path: '/' });
     res.status(204).end();
   });
@@ -268,7 +329,7 @@ export function createGateway(db: Database, upstreams: Upstreams) {
     res.json({
       keys: (
         await db.query(
-          'SELECT id,user_id,name,prefix,created_at,revoked_at FROM api_keys WHERE ($1::boolean OR user_id=$2) ORDER BY created_at DESC',
+          "SELECT id,user_id,name,prefix,created_at,revoked_at FROM api_keys WHERE purpose='external' AND ($1::boolean OR user_id=$2) ORDER BY created_at DESC",
           [u.role === 'admin', u.id],
         )
       ).rows,
@@ -279,7 +340,10 @@ export function createGateway(db: Database, upstreams: Upstreams) {
     const input = parse(keyInput, req.body);
     const owner = input.user_id ?? u.id;
     if (owner !== u.id) requireAdmin(u);
-    if (!(await db.query('SELECT id FROM users WHERE id=$1 AND active=true', [owner])).rowCount)
+    if (
+      !(await db.query('SELECT id FROM users WHERE id=$1 AND active=true', [owner]))
+        .rowCount
+    )
       throw new ApiError(404, 'User not found.');
     const raw = 'urumi_' + token();
     const inserted = await db.query(
@@ -302,7 +366,9 @@ export function createGateway(db: Database, upstreams: Upstreams) {
     requireAdmin(res.locals.user);
     res.json({
       members: (
-        await db.query('SELECT id,email,role,active,created_at FROM users ORDER BY created_at')
+        await db.query(
+          'SELECT id,email,role,active,created_at FROM users ORDER BY created_at',
+        )
       ).rows,
     });
   });
@@ -310,7 +376,10 @@ export function createGateway(db: Database, upstreams: Upstreams) {
     requireAdmin(res.locals.user);
     const memberId = parse(id, req.params.id);
     const input = parse(
-      z.object({ role: z.enum(['admin', 'member']).optional(), active: z.boolean().optional() }),
+      z.object({
+        role: z.enum(['admin', 'member']).optional(),
+        active: z.boolean().optional(),
+      }),
       req.body,
     );
     const client = await db.pool.connect();
@@ -318,7 +387,9 @@ export function createGateway(db: Database, upstreams: Upstreams) {
       await client.query('BEGIN');
       await client.query('SELECT pg_advisory_xact_lock(70125)');
       const member = (
-        await client.query('SELECT id,role,active FROM users WHERE id=$1 FOR UPDATE', [memberId])
+        await client.query('SELECT id,role,active FROM users WHERE id=$1 FOR UPDATE', [
+          memberId,
+        ])
       ).rows[0];
       if (!member) throw new ApiError(404, 'User not found.');
       if (
@@ -369,16 +440,14 @@ export function createGateway(db: Database, upstreams: Upstreams) {
       "INSERT INTO invitations(email,role,token_hash,invited_by,expires_at) VALUES($1,$2,$3,$4,now()+interval '48 hours')",
       [input.email, input.role, digest(raw), u.id],
     );
-    res
-      .status(201)
-      .json({
-        invitation: {
-          email: input.email,
-          token: raw,
-          expires_in_hours: 48,
-          accept_url: config.PUBLIC_URL + '/invite?token=' + raw,
-        },
-      });
+    res.status(201).json({
+      invitation: {
+        email: input.email,
+        token: raw,
+        expires_in_hours: 48,
+        accept_url: config.PUBLIC_URL + '/invite?token=' + raw,
+      },
+    });
   });
   app.get('/api/servers', async (_req, res) => {
     requireAdmin(res.locals.user);
@@ -434,9 +503,10 @@ export function createGateway(db: Database, upstreams: Upstreams) {
       req.body,
     );
     const existing = (
-      await db.query<import('./database.js').Upstream>('SELECT * FROM upstreams WHERE id=$1', [
-        serverId,
-      ])
+      await db.query<import('./database.js').Upstream>(
+        'SELECT * FROM upstreams WHERE id=$1',
+        [serverId],
+      )
     ).rows[0];
     if (!existing) throw new ApiError(404, 'Server not found.');
     if (input.url)
@@ -476,12 +546,65 @@ export function createGateway(db: Database, upstreams: Upstreams) {
     await upstreams.refreshAll();
     res.json({ status: 'refreshed' });
   });
+  const activeChats = new Set<string>();
+  app.get('/api/chat', (_req, res) =>
+    res.json({ configured: !!config.LLM_API_KEY, model: config.LLM_MODEL }),
+  );
+  app.post('/api/chat', async (req, res) => {
+    const user = res.locals.user as Principal;
+    if (!user.session) throw new ApiError(403, 'Dashboard login required for chat.');
+    const input = parse(chatInput, req.body);
+    if (activeChats.has(user.id) || activeChats.size >= 4)
+      throw new ApiError(429, 'Another chat is running. Wait for it to finish.');
+    const aborted = new AbortController();
+    res.on('close', () => {
+      if (!res.writableEnded) aborted.abort();
+    });
+    activeChats.add(user.id);
+    try {
+      const readTools = new Set(
+        (await upstreams.catalog(user.role))
+          .filter((x) => x.row.read_tools.includes(x.original))
+          .map((x) => x.tool.name),
+      );
+      const address = req.socket.localPort;
+      const result = await runChat(
+        db,
+        user,
+        input,
+        new URL(`http://127.0.0.1:${address}/mcp`),
+        readTools,
+        aborted.signal,
+        providerFetch,
+      );
+      res.status(result.status).json(result);
+    } finally {
+      activeChats.delete(user.id);
+    }
+  });
+  app.get('/api/metrics', async (_req, res) => {
+    requireAdmin(res.locals.user);
+    res.json({ metrics: await metrics(db) });
+  });
+  app.get('/metrics', async (req, res) => {
+    const user = await authenticate(req);
+    requireAdmin(user);
+    res
+      .set('Cache-Control', 'no-store')
+      .type('text/plain; version=0.0.4')
+      .send(prometheus(await metrics(db)));
+  });
   app.get('/api/tools', async (_req, res) => {
-    res.json({ tools: (await upstreams.catalog(res.locals.user.role)).map((x) => x.tool) });
+    res.json({
+      tools: (await upstreams.catalog(res.locals.user.role)).map((x) => x.tool),
+    });
   });
   app.get('/api/audit', async (req, res) => {
     requireAdmin(res.locals.user);
-    const page = parse(z.coerce.number().int().min(1).max(100000).default(1), req.query.page);
+    const page = parse(
+      z.coerce.number().int().min(1).max(100000).default(1),
+      req.query.page,
+    );
     res.json({
       events: (
         await db.query(
@@ -514,7 +637,8 @@ export function createGateway(db: Database, upstreams: Upstreams) {
       const auditId = await audit(user, name, 'started', row);
       let result;
       try {
-        if (row && !row.enabled) result = failure('SERVER_DISABLED', 'This server is disabled.');
+        if (row && !row.enabled)
+          result = failure('SERVER_DISABLED', 'This server is disabled.');
         else if (!row || !entry)
           result = failure(
             'UNKNOWN_TOOL',
@@ -529,13 +653,17 @@ export function createGateway(db: Database, upstreams: Upstreams) {
             request.params.arguments ?? {},
             extra.signal,
           );
-        const error = (result.structuredContent?.error as { code?: string } | undefined)?.code;
-        await db.query('UPDATE audit_log SET duration_ms=$2,outcome=$3,error_code=$4 WHERE id=$1', [
-          auditId,
-          Date.now() - start,
-          result.isError ? 'error' : 'success',
-          error ?? (result.isError ? 'UPSTREAM_TOOL_ERROR' : null),
-        ]);
+        const error = (result.structuredContent?.error as { code?: string } | undefined)
+          ?.code;
+        await db.query(
+          'UPDATE audit_log SET duration_ms=$2,outcome=$3,error_code=$4 WHERE id=$1',
+          [
+            auditId,
+            Date.now() - start,
+            result.isError ? 'error' : 'success',
+            error ?? (result.isError ? 'UPSTREAM_TOOL_ERROR' : null),
+          ],
+        );
         return result;
       } catch {
         await db.query(
@@ -557,10 +685,18 @@ export function createGateway(db: Database, upstreams: Upstreams) {
   });
   app.all('/mcp', async (req, res) => {
     await authenticate(req, true);
-    res.set('Allow', 'POST').status(405).json({ error: 'Stateless MCP accepts POST only.' });
+    res
+      .set('Allow', 'POST')
+      .status(405)
+      .json({ error: 'Stateless MCP accepts POST only.' });
   });
   app.use(
-    (error: any, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+    (
+      error: any,
+      _req: express.Request,
+      res: express.Response,
+      _next: express.NextFunction,
+    ) => {
       if (res.headersSent) return;
       const status =
         error instanceof ApiError
@@ -570,20 +706,18 @@ export function createGateway(db: Database, upstreams: Upstreams) {
             : [400, 413].includes(error.status)
               ? error.status
               : 500;
-      res
-        .status(status)
-        .json({
-          error:
-            error instanceof ApiError
-              ? error.message
-              : status === 409
-                ? 'Record already exists.'
-                : status === 400
-                  ? 'Invalid request body.'
-                  : status === 413
-                    ? 'Request too large.'
-                    : 'Request failed.',
-        });
+      res.status(status).json({
+        error:
+          error instanceof ApiError
+            ? error.message
+            : status === 409
+              ? 'Record already exists.'
+              : status === 400
+                ? 'Invalid request body.'
+                : status === 413
+                  ? 'Request too large.'
+                  : 'Request failed.',
+      });
     },
   );
   return app;

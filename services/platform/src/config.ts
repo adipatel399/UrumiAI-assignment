@@ -1,5 +1,24 @@
+import { isIP } from 'node:net';
 import { z } from 'zod';
 const schema = z.object({
+  LLM_URL: z
+    .url()
+    .refine((value) => {
+      const u = new URL(value);
+      return (
+        u.protocol === 'https:' &&
+        !isIP(u.hostname) &&
+        !u.hostname.startsWith('[') &&
+        !u.username &&
+        !u.password &&
+        !u.search &&
+        !u.hash &&
+        (!u.port || u.port === '443')
+      );
+    })
+    .default('https://api.groq.com/openai/v1/chat/completions'),
+  LLM_MODEL: z.string().max(150).default('qwen/qwen3.8-27b'),
+  LLM_API_KEY: z.string().default(''),
   PORT: z.coerce.number().int().positive().default(3000),
   PGHOST: z.string(),
   PGPORT: z.coerce.number().default(5432),

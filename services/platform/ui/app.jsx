@@ -19,12 +19,18 @@ function App() {
     const data = r.status === 204 ? {} : await r.json();
     if (!r.ok) {
       E(data.error);
-      throw Error(data.error);
+      const error = Error(data.error);
+      error.data = data;
+      throw error;
     }
     return data;
   }
   async function load() {
     const current = ++generation.current;
+    if (tab === "chat") {
+      R([]);
+      return;
+    }
     try {
       const d = await api(tab);
       if (current === generation.current) R(d[tab] ?? d.events ?? []);
@@ -176,8 +182,16 @@ function App() {
             </p>
             <nav>
               {(user.role === "admin"
-                ? ["servers", "members", "keys", "tools", "audit"]
-                : ["keys", "tools"]
+                ? [
+                    "chat",
+                    "servers",
+                    "members",
+                    "keys",
+                    "tools",
+                    "audit",
+                    "metrics",
+                  ]
+                : ["chat", "keys", "tools"]
               ).map((x) => (
                 <button
                   aria-pressed={tab === x}
@@ -194,7 +208,15 @@ function App() {
             </nav>
             <section>
               <h2>{tab}</h2>
-              <button onClick={load}>Refresh</button>
+              {tab !== "chat" && <button onClick={load}>Refresh</button>}
+              {tab === "chat" && <Chat api={api} />}
+              {tab === "metrics" && (
+                <p>
+                  Retained audit history · latency includes gateway checks ·
+                  refresh to update. No customer data or keys appear in these
+                  metrics.
+                </p>
+              )}
               {secret && (
                 <aside>
                   <strong>Copy now — shown only here</strong>
@@ -265,6 +287,25 @@ function App() {
               {rows.map((r, i) => (
                 <article key={r.id ?? r.name ?? i}>
                   <h3>{r.name ?? r.email ?? r.tool ?? r.id}</h3>
+                  {tab === "metrics" && (
+                    <>
+                      <p>
+                        {r.enabled ? r.status : "Disabled"} · Last checked{" "}
+                        {r.checked_at
+                          ? new Date(r.checked_at).toLocaleString()
+                          : "Never"}
+                      </p>
+                      <p>
+                        {r.calls} calls · {r.failures} failures ·{" "}
+                        {r.in_progress} unfinished
+                      </p>
+                      <p>
+                        Average {Math.round(r.mean_ms)} ms · 95th percentile{" "}
+                        {Math.round(r.p95_ms)} ms
+                      </p>
+                      {r.last_error && <p role="alert">{r.last_error}</p>}
+                    </>
+                  )}
                   {tab === "keys" && (
                     <p>
                       {r.prefix}… · {r.revoked_at ? "Revoked" : "Active"} ·
@@ -416,6 +457,144 @@ function App() {
         )}
       </main>
     </>
+  );
+}
+function Chat({ api }) {
+  const [messages, setMessages] = useState([]),
+    [activity, setActivity] = useState([]),
+    [busy, setBusy] = useState(false),
+    [error, setError] = useState(""),
+    [configured, setConfigured] = useState(null),
+    [writes, setWrites] = useState(false);
+  useEffect(() => {
+    api("chat")
+      .then(setConfigured)
+      .catch((e) => setError(e.message));
+  }, []);
+  async function send(e) {
+    e.preventDefault();
+    const form = e.currentTarget;
+    const text = new FormData(form).get("message").trim();
+    if (!text || busy) return;
+    const next = [...messages, { role: "user", content: text }].slice(-11);
+    setMessages(next);
+    setActivity([]);
+    setError("");
+    setBusy(true);
+    form.reset();
+    try {
+      const d = await api("chat", "POST", {
+        messages: next.map((m) => ({
+          ...m,
+          content: m.content.slice(0, 4000),
+        })),
+        allow_writes: writes,
+      });
+      setActivity(d.activity ?? []);
+      setMessages([...next, { role: "assistant", content: d.answer }]);
+    } catch (e) {
+      setError(e.message);
+      setActivity(e.data?.activity ?? []);
+    } finally {
+      setBusy(false);
+      setWrites(false);
+    }
+  }
+  return (
+    <div className="chat">
+      <p>
+        Ask about your store, inventory, and store policies. Tools run using
+        your account’s permissions.
+      </p>
+      <p>
+        Messages and selected tool data are sent to the configured model
+        provider. Use demo customer data. Chat stays in this page’s memory; tool
+        audit records are retained.
+      </p>
+      {configured && (
+        <p>
+          {configured.configured
+            ? `Model: ${configured.model}`
+            : "Chat is waiting for an administrator to configure the model provider key."}
+        </p>
+      )}
+      <div aria-live="polite">
+        {messages.map((m, i) => (
+          <article key={i}>
+            <strong>{m.role === "user" ? "You" : "Assistant"}</strong>
+            <pre>{m.content}</pre>
+          </article>
+        ))}
+      </div>
+      {error && <p role="alert">{error}</p>}
+      {busy && (
+        <p role="status">
+          Working through the gateway… completed tool activity will appear
+          below.
+        </p>
+      )}
+      {activity.length > 0 && (
+        <div>
+          <h3>Tool activity</h3>
+          {activity.map((a, i) => (
+            <article key={i}>
+              <strong>{a.tool}</strong>
+              <p>
+                {a.outcome} · {a.duration_ms} ms
+              </p>
+              <details>
+                <summary>Inputs and result</summary>
+                <pre>
+                  {JSON.stringify(
+                    { arguments: a.arguments, result: a.result },
+                    null,
+                    2,
+                  )}
+                </pre>
+              </details>
+            </article>
+          ))}
+        </div>
+      )}
+      <form onSubmit={send}>
+        <label>
+          Message
+          <textarea
+            name="message"
+            maxLength="4000"
+            required
+            disabled={busy}
+            placeholder="Show today’s orders, or find the returns policy."
+          />
+        </label>
+        <label className="check">
+          <input
+            type="checkbox"
+            checked={writes}
+            onChange={(e) => setWrites(e.target.checked)}
+            disabled={busy}
+          />{" "}
+          Allow requested changes for this message
+        </label>
+        <p>
+          Enable changes when asking to create a product or update an order.
+          Your role still controls which tools are available.
+        </p>
+        <button disabled={busy || !configured?.configured}>Send message</button>
+        <button
+          type="button"
+          disabled={busy}
+          onClick={() => {
+            setMessages([]);
+            setActivity([]);
+            setError("");
+            setWrites(false);
+          }}
+        >
+          Clear conversation
+        </button>
+      </form>
+    </div>
   );
 }
 createRoot(document.getElementById("root")).render(<App />);

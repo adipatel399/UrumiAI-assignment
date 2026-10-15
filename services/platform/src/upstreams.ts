@@ -1,9 +1,17 @@
+import { Agent } from 'undici';
+import { destinationAgent } from './network.js';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import type { Tool, CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { Database, type Upstream } from './database.js';
 import { decrypt, digest, validateUpstream } from './security.js';
-type Entry = { client?: Client; tools: Tool[]; fingerprint: string; refresh?: Promise<void> };
+type Entry = {
+  client?: Client;
+  agent?: Agent;
+  tools: Tool[];
+  fingerprint: string;
+  refresh?: Promise<void>;
+};
 export const exposedName = (slug: string, name: string) => {
   const full = slug + '__' + name;
   return full.length <= 64 && /^[a-zA-Z0-9_.-]+$/.test(full)
@@ -15,6 +23,26 @@ export const failure = (code: string, message: string): CallToolResult => ({
   content: [{ type: 'text', text: JSON.stringify({ error: { code, message } }) }],
   structuredContent: { error: { code, message } },
 });
+function diagnostic(error: unknown) {
+  const e = error as {
+    code?: unknown;
+    name?: unknown;
+    cause?: { code?: unknown };
+  };
+  if (e?.code === 401 || e?.code === 403)
+    return 'Authentication rejected. Check the configured upstream credential.';
+  if (
+    e?.name === 'TimeoutError' ||
+    e?.code === -32001 ||
+    e?.cause?.code === 'UND_ERR_CONNECT_TIMEOUT'
+  )
+    return 'Connection or tool deadline exceeded. Check service health and latency.';
+  if (e?.cause?.code === 'ECONNREFUSED' || e?.cause?.code === 'ENOTFOUND')
+    return 'Service connection refused or DNS unavailable. Check its address and deployment.';
+  if (typeof e?.code === 'number' && e.code >= 400 && e.code <= 599)
+    return `Upstream returned HTTP ${e.code}. Check service health and credentials.`;
+  return 'Connection, destination policy, or protocol check failed. Check the URL, deployment, and network policy.';
+}
 export class Upstreams {
   entries = new Map<string, Entry>();
   constructor(public db: Database) {}
@@ -31,13 +59,15 @@ export class Upstreams {
     const entry = this.entries.get(id);
     this.entries.delete(id);
     await entry?.client?.close().catch(() => {});
+    await entry?.agent?.destroy().catch(() => {});
   }
   async refresh(row: Upstream) {
     if (!row.enabled) {
       await this.forget(row.id);
-      await this.db.query("UPDATE upstreams SET status='Disabled',last_error=NULL WHERE id=$1", [
-        row.id,
-      ]);
+      await this.db.query(
+        "UPDATE upstreams SET status='Disabled',last_error=NULL WHERE id=$1",
+        [row.id],
+      );
       return;
     }
     const fingerprint = digest(row.url + (row.credential ?? ''));
@@ -66,19 +96,30 @@ export class Upstreams {
                 this.db.config.ENCRYPTION_KEY,
               )
             : undefined;
-          const client = new Client({ name: 'urumi-gateway', version: '0.1.0' });
+          const client = new Client({
+            name: 'urumi-gateway',
+            version: '0.1.0',
+          });
           current.client = client;
+          await current.agent?.destroy();
+          current.agent = destinationAgent(
+            url,
+            this.db.config.UPSTREAM_ALLOWED_HOSTS.split(','),
+          );
           const transport = new StreamableHTTPClientTransport(url, {
-            requestInit: { headers: credential ? { [credential.header]: credential.value } : {} },
+            requestInit: {
+              headers: credential ? { [credential.header]: credential.value } : {},
+            },
             fetch: (input, init) =>
               fetch(input, {
                 ...init,
+                dispatcher: current.agent,
                 redirect: 'error',
                 signal: AbortSignal.any([
                   ...(init?.signal ? [init.signal] : []),
                   AbortSignal.timeout(this.db.config.UPSTREAM_TIMEOUT_MS),
                 ]),
-              }),
+              } as RequestInit & { dispatcher: Agent }),
           });
           await client.connect(transport, {
             timeout: this.db.config.UPSTREAM_TIMEOUT_MS,
@@ -102,12 +143,12 @@ export class Upstreams {
           "UPDATE upstreams SET status='Connected',last_error=NULL,checked_at=now() WHERE id=$1 AND enabled=true",
           [row.id],
         );
-      } catch {
+      } catch (error) {
         await current.client?.close().catch(() => {});
         current.client = undefined;
         await this.db.query(
-          "UPDATE upstreams SET status='Unreachable',last_error='Connection, authentication, protocol, or timeout failure',checked_at=now() WHERE id=$1 AND enabled=true",
-          [row.id],
+          "UPDATE upstreams SET status='Unreachable',last_error=$2,checked_at=now() WHERE id=$1 AND enabled=true",
+          [row.id, diagnostic(error)],
         );
       }
     })().finally(() => {
@@ -150,12 +191,12 @@ export class Upstreams {
         timeout: this.db.config.UPSTREAM_TIMEOUT_MS,
         signal,
       })) as CallToolResult;
-    } catch {
+    } catch (error) {
       await entry.client.close().catch(() => {});
       entry.client = undefined;
       await this.db.query(
-        "UPDATE upstreams SET status='Unreachable',last_error='Tool call connection or timeout failure',checked_at=now() WHERE id=$1 AND enabled=true",
-        [row.id],
+        "UPDATE upstreams SET status='Unreachable',last_error=$2,checked_at=now() WHERE id=$1 AND enabled=true",
+        [row.id, diagnostic(error)],
       );
       return failure(
         'UPSTREAM_CALL_FAILED',

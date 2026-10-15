@@ -5,6 +5,8 @@ update_option('woocommerce_currency', 'INR');
 update_option('woocommerce_default_country', 'IN');
 update_option('timezone_string', 'Asia/Kolkata');
 update_option('woocommerce_enable_guest_checkout', 'yes');
+// A demo customer must be able to shop without an administrator login.
+update_option('woocommerce_coming_soon', 'no');
 update_option('show_on_front', 'page');
 update_option('page_on_front', (int) get_option('woocommerce_shop_page_id'));
 update_option('woocommerce_cod_settings', [

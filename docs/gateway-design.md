@@ -1,6 +1,6 @@
 # Gateway architecture and tradeoffs
 
-The gateway is an MCP server to external clients and an MCP client to registered upstreams. One public endpoint aggregates WooCommerce, demo inventory, and store knowledge. The dashboard API shares the backend; the React dashboard is available; LLM chat remains unimplemented.
+The gateway is an MCP server to external clients and an MCP client to registered upstreams. One public endpoint aggregates WooCommerce, demo inventory, and store knowledge. The dashboard API shares the backend. The React dashboard includes a bounded chat loop that uses a short-lived user-scoped MCP credential through the same public protocol handler.
 
 ## Discovery and routing
 
@@ -18,7 +18,7 @@ Streamable HTTP uses a fresh server/transport per POST with JSON responses. User
 
 Inventory exposes `search` and `get_stock`; knowledge exposes `search`. Inventory is explicitly synthetic, with a seeded stock count and reorder threshold for the demo SKU; it is not synchronized with WooCommerce. Knowledge supplies test payment/shipping guidance. These services intentionally share a tool name to exercise collision handling.
 
-An example workflow retrieves store products and consults inventory by SKU, then reads store guidance. The SDK integration check exercises cross-service calls; the natural-language prompt and model loop will be demonstrated after chat is implemented.
+An example workflow retrieves store products and consults inventory by SKU, then reads store guidance. The SDK integration check exercises cross-service calls. Chat routing and permissions pass controlled-provider integration tests and live-model checks: product creation, guest checkout, today’s orders, a two-upstream workflow, and member write refusal. See [chat and operations](chat-and-operations.md).
 
 ## Storage and deployment
 
@@ -32,11 +32,11 @@ Local URLs use `*.localhost`, with Ingress on loopback port 8080. Production val
 
 ## Network boundaries
 
-Only the gateway is public through Ingress. Internal MCP ingress accepts gateway-labeled pods and also requires upstream bearer credentials. Gateway ingress admits Traefik. Gateway egress allows DNS, its PostgreSQL database, the three internal MCP Services, and external HTTPS with private/reserved IPv4 ranges excluded. It cannot call WordPress or either store database directly. Supporting services have no outbound network access; WooCommerce MCP reaches only DNS and WordPress.
+Only the gateway is public through Ingress. Internal MCP ingress accepts gateway-labeled pods and also requires upstream bearer credentials. Gateway ingress admits Traefik. Gateway egress allows DNS, its PostgreSQL database, the three internal MCP Services, and external HTTPS with private/reserved IPv4 ranges excluded. It cannot call WordPress or either store database directly. Supporting services have DNS-only egress; WooCommerce MCP reaches only DNS and WordPress. Namespace-wide default deny also isolates new, unclassified pods.
 
 An administrator can add public HTTPS upstreams with optional static header or bearer credentials. Additional trusted internal hosts need explicit server configuration and NetworkPolicy changes. Credentials, fragments and query parameters embedded in registration URLs are rejected. External IPv6 destinations are conservatively rejected for now. Redirects are refused.
 
-Initial DNS checks and egress rules block common SSRF destinations, including cloud metadata. They are not a complete DNS-pinning solution. Stronger resolver pinning, transport encryption and external integration compatibility are part of remaining security work.
+URL validation and the actual socket DNS lookup reject non-public external destinations, including cloud metadata and mixed DNS answers. Validated addresses are passed directly to the connection, and redirects are refused. Only explicitly configured internal MCP names bypass the public-address rule, on HTTP port 3000. Public IPv6 integrations are intentionally unsupported. Internal transport encryption and broader external integration compatibility remain production considerations.
 
 ## Verification
 

@@ -5,7 +5,9 @@ import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/
 import { token } from '../src/security.js';
 const base = process.env.GATEWAY_TEST_URL ?? 'http://gateway.localhost:8080';
 const path = '.local/gateway-demo.json';
-const credentials = JSON.parse(await readFile('.local/platform-credentials.json', 'utf8'));
+const credentials = JSON.parse(
+  await readFile('.local/platform-credentials.json', 'utf8'),
+);
 const stage = process.env.CHECK_STAGE ?? 'baseline';
 let saved: any;
 try {
@@ -19,7 +21,9 @@ async function api(
   body?: unknown,
   auth?: { cookie: string; csrf: string } | string,
 ) {
-  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+  };
   if (typeof auth === 'string') headers.Authorization = 'Bearer ' + auth;
   else if (auth) {
     headers.Cookie = auth.cookie;
@@ -59,13 +63,23 @@ async function client(key: string) {
 if (stage === 'baseline') {
   assert.equal(servers.body.servers.length, 3);
   assert(servers.body.servers.every((s: any) => s.status === 'Connected'));
-  const createdA = await api('/api/keys', 'POST', { name: 'Local verification admin' }, admin);
+  const createdA = await api(
+    '/api/keys',
+    'POST',
+    { name: 'Local verification admin' },
+    admin,
+  );
   assert.equal(createdA.status, 201);
   saved.adminKey = createdA.body.key.token;
   saved.adminKeyId = createdA.body.key.id;
   const members = await api('/api/members', 'GET', undefined, admin);
   if (!members.body.members.some((m: any) => m.email === saved.memberEmail)) {
-    const invitation = await api('/api/invitations', 'POST', { email: saved.memberEmail }, admin);
+    const invitation = await api(
+      '/api/invitations',
+      'POST',
+      { email: saved.memberEmail },
+      admin,
+    );
     assert.equal(invitation.status, 201);
     const accepted = await api('/api/invitations/accept', 'POST', {
       token: invitation.body.invitation.token,
@@ -88,7 +102,12 @@ if (stage === 'baseline') {
   });
   assert.equal(loginB.status, 200);
   const member = { cookie: loginB.cookie, csrf: loginB.body.csrf_token };
-  const keyB = await api('/api/keys', 'POST', { name: 'Local verification member' }, member);
+  const keyB = await api(
+    '/api/keys',
+    'POST',
+    { name: 'Local verification member' },
+    member,
+  );
   assert.equal(keyB.status, 201);
   saved.revokedMemberKey = keyB.body.key.token;
   const a = await client(saved.adminKey);
@@ -100,7 +119,8 @@ if (stage === 'baseline') {
     assert.equal(toolsB.length, 6);
     assert(toolsA.includes('inventory__search') && toolsA.includes('knowledge__search'));
     assert(
-      !toolsB.includes('store__create_product') && !toolsB.includes('store__update_order_status'),
+      !toolsB.includes('store__create_product') &&
+        !toolsB.includes('store__update_order_status'),
     );
     assert(
       (
@@ -126,7 +146,10 @@ if (stage === 'baseline') {
       });
       assert(!made.isError);
     }
-    const order = await b.callTool({ name: 'store__list_orders', arguments: {} });
+    const order = await b.callTool({
+      name: 'store__list_orders',
+      arguments: {},
+    });
     assert(!order.isError);
     assert(
       (order.structuredContent as any).orders.length > 0,
@@ -142,12 +165,20 @@ if (stage === 'baseline') {
     const inventory = servers.body.servers.find((s: any) => s.slug === 'inventory');
     try {
       assert.equal(
-        (await api('/api/servers/' + inventory.id, 'PATCH', { enabled: false }, admin)).status,
+        (await api('/api/servers/' + inventory.id, 'PATCH', { enabled: false }, admin))
+          .status,
         200,
       );
       assert(!(await a.listTools()).tools.some((x) => x.name.startsWith('inventory__')));
       assert(!(await b.listTools()).tools.some((x) => x.name.startsWith('inventory__')));
-      assert((await b.callTool({ name: 'inventory__search', arguments: { query: '' } })).isError);
+      assert(
+        (
+          await b.callTool({
+            name: 'inventory__search',
+            arguments: { query: '' },
+          })
+        ).isError,
+      );
     } finally {
       await api('/api/servers/' + inventory.id, 'PATCH', { enabled: true }, admin);
     }
@@ -193,12 +224,40 @@ if (stage === 'baseline') {
   const a = await client(saved.adminKey);
   try {
     assert(
-      !(await a.callTool({ name: 'knowledge__search', arguments: { query: 'shipping' } })).isError,
+      !(
+        await a.callTool({
+          name: 'knowledge__search',
+          arguments: { query: 'shipping' },
+        })
+      ).isError,
     );
     assert(!(await a.callTool({ name: 'store__list_orders', arguments: {} })).isError);
+    if (stage === 'outage') {
+      const failed = await a.callTool({
+        name: 'inventory__search',
+        arguments: { query: '' },
+      });
+      assert(failed.isError);
+      const stats = await api('/api/metrics', 'GET', undefined, admin);
+      const metric = stats.body.metrics.find((x: any) => x.slug === 'inventory');
+      assert(metric.failures > 0 && metric.status === 'Unreachable' && metric.last_error);
+      console.log(
+        'PASS: outage visible in per-server failures and safe dashboard diagnostics.',
+      );
+    }
     if (stage !== 'outage')
-      assert(!(await a.callTool({ name: 'inventory__search', arguments: { query: '' } })).isError);
-    assert.equal((await api('/api/me', 'GET', undefined, saved.revokedMemberKey)).status, 401);
+      assert(
+        !(
+          await a.callTool({
+            name: 'inventory__search',
+            arguments: { query: '' },
+          })
+        ).isError,
+      );
+    assert.equal(
+      (await api('/api/me', 'GET', undefined, saved.revokedMemberKey)).status,
+      401,
+    );
     const audit = await api('/api/audit', 'GET', undefined, admin);
     assert(
       audit.body.events.some(

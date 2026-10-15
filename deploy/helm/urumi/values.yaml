@@ -32,6 +32,7 @@ platform:
   image: urumi-platform:0.1.0
   host: gateway.localhost
   url: http://gateway.localhost:8080
+  llmSecretName: urumi-llm-secrets
   cookieSecure: false
   tlsSecret: ""
   timeoutMs: 10000

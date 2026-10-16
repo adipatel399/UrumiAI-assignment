@@ -4,7 +4,9 @@ The Kubernetes WooCommerce store, its internal MCP service, team gateway, suppor
 
 See [the store architecture](docs/store-architecture.md), [WooCommerce MCP design](docs/woocommerce-mcp.md), and [requirements checklist](docs/requirements.md).
 
-Gateway details: [architecture and tradeoffs](docs/gateway-design.md), [access and threat model](docs/access-and-threat-model.md), [chat setup and operations](docs/chat-and-operations.md).
+Gateway details: [architecture and tradeoffs](docs/gateway-design.md), [access and threat model](docs/access-and-threat-model.md), [chat setup and operations](docs/chat-and-operations.md), [implemented differentiators](docs/standouts.md).
+
+Live VPS: [store](https://store.85.211.243.237.sslip.io/shop/) · [dashboard](https://gateway.85.211.243.237.sslip.io/) · MCP endpoint `https://gateway.85.211.243.237.sslip.io/mcp`. Use privately supplied credentials and fictional customer data. This single-node assessment deployment consumes student credits and is not a permanent hosted service.
 
 ## Local setup
 
@@ -100,7 +102,12 @@ See [chat, operations, limits, and verification](docs/chat-and-operations.md) fo
 - Existing store: bootstrap intentionally leaves existing WordPress users/passwords intact. Do not rotate database passwords by editing the local file; changing the Secret alone does not change existing database accounts.
 - Email: outbound mail is not configured in this test store; notification attempts may report missing `sendmail`. Checkout and order storage work without email. No real customer information should be used here.
 
-## Production preparation
+## VPS deployment, upgrades, and submission
 
-`values-prod.yaml` uses the same Helm templates. It is a configuration example, not a deployed production system. Publish the image to a registry available to the VPS, create Secrets in namespace `urumi`, configure DNS and TLS, and select appropriate storage and sizes. Full VPS instructions and verified deployment will be added with the production deployment. Persistent site URL must be updated deliberately when moving an existing database between environments.
+The same Helm chart is deployed on a real Azure Ubuntu/k3s VM with valid HTTPS certificates, independent Secrets, immutable AMD64 application images, and local-path persistence. Public web traffic uses Traefik; the Kubernetes API is accessed through an operator SSH tunnel. Local versus VPS differences are values only. See [complete VPS setup and cost/cleanup instructions](docs/production-deployment.md).
 
+The platform was also installed from empty volumes in a disposable local cluster. Login, all three upstreams and eight tools worked. A quiesced backup was restored there after deliberate store/platform-data changes, and the earlier values returned. Helm upgrade/rollback rehearsals passed locally and on the VPS. See [upgrade, rollback and backup/restore procedures](docs/upgrades-and-recovery.md). No claim of high availability or automatic database rollback is made.
+
+For a configured installation, run `GATEWAY_URL=YOUR_URL URUMI_CREDENTIAL_DIR=PRIVATE_DIRECTORY node scripts/check-installation.mjs` for the read-only login/discovery/routing probe. The temporary probe key is revoked afterward. `scripts/prepare-demo.mjs` prepares independent demo users and a private Inspector configuration without printing keys.
+
+MCP Inspector 2.11.0 was verified as member B with only the gateway URL/key: six tools, today's orders, an external question spanning inventory and knowledge, and rejection after revocation. The optional external-question helper delegates every MCP request to the real Inspector CLI. See [the live demo and submission runbook](docs/demo-runbook.md) for client setup, the required two-user flow, narration topics, and recording hygiene.

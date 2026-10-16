@@ -78,6 +78,10 @@ apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
   name: {{ .Release.Name }}-store
+  {{- if .Values.tls.enabled }}
+  annotations:
+    traefik.ingress.kubernetes.io/router.middlewares: "{{ .Release.Namespace }}-{{ .Release.Name }}-https@kubernetescrd"
+  {{- end }}
 spec:
   ingressClassName: {{ .Values.store.ingressClass }}
   {{- if .Values.store.tlsSecret }}

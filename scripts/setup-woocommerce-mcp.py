@@ -2,22 +2,14 @@
 """Provision a dedicated WooCommerce principal and its Kubernetes Secret."""
 import json, os, pathlib, secrets, subprocess
 
-root = pathlib.Path(__file__).resolve().parents[1]
-context = subprocess.check_output(['kubectl', 'config', 'current-context'], text=True).strip()
-if context != 'k3d-urumi':
-    raise SystemExit('Select k3d-urumi before provisioning local MCP credentials.')
-path = root / '.local' / 'woocommerce-mcp-credentials.json'
-path.parent.mkdir(mode=0o700, exist_ok=True)
-path.parent.chmod(0o700)
-if path.exists():
-    data = json.loads(path.read_text())
-else:
-    data = {'WOO_CONSUMER_KEY': 'ck_' + secrets.token_hex(20),
-            'WOO_CONSUMER_SECRET': 'cs_' + secrets.token_hex(20),
-            'MCP_BEARER_TOKEN': secrets.token_urlsafe(48),
-            'SERVICE_USER_PASSWORD': secrets.token_urlsafe(48)}
-    with os.fdopen(os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600), 'w') as f:
-        json.dump(data, f, indent=2)
+from provisioning import PRIVATE, private_json, kube, secret
+
+data=private_json('woocommerce-mcp-credentials.json',lambda:{
+    'WOO_CONSUMER_KEY':'ck_'+secrets.token_hex(20),
+    'WOO_CONSUMER_SECRET':'cs_'+secrets.token_hex(20),
+    'MCP_BEARER_TOKEN':secrets.token_urlsafe(48),
+    'SERVICE_USER_PASSWORD':secrets.token_urlsafe(48),
+})
 # The credential values travel over stdin, not shell arguments or terminal output.
 php = r'''
 $credentials = json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR);
@@ -42,10 +34,6 @@ if (!$existing) {
 }
 echo "Dedicated store principal and API key ready.\n";
 '''
-subprocess.run(['kubectl', 'exec', '-i', '-n', 'urumi', 'deployment/urumi-store', '--',
-                'wp', 'eval', php, '--allow-root'], input=json.dumps(data), text=True, check=True)
-manifest = {'apiVersion':'v1', 'kind':'Secret',
-            'metadata':{'name':'urumi-woocommerce-mcp-secrets', 'namespace':'urumi'},
-            'type':'Opaque', 'stringData': {k:v for k,v in data.items() if k != 'SERVICE_USER_PASSWORD'}}
-subprocess.run(['kubectl','apply','-f','-'], input=json.dumps(manifest), text=True, check=True)
-print('MCP credentials applied. Private backup is in .local; secret values not printed.')
+kube('exec','-i','-n','urumi','deployment/urumi-store','--','wp','eval',php,'--allow-root',input=json.dumps(data))
+secret('urumi-woocommerce-mcp-secrets',{k:v for k,v in data.items() if k!='SERVICE_USER_PASSWORD'})
+print('Dedicated store principal and MCP Secret ready; values not printed.')

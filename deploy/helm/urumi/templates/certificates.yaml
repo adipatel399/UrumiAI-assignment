@@ -1,0 +1,57 @@
+{{- if .Values.tls.enabled }}
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: {{ .Values.tls.issuerName }}
+spec:
+  acme:
+    email: {{ required "tls.email is required when TLS is enabled" .Values.tls.email | quote }}
+    server: {{ .Values.tls.server | quote }}
+    privateKeySecretRef: {name: "{{ .Release.Name }}-acme-account"}
+    solvers:
+      - http01:
+          ingress: {ingressClassName: {{ .Values.store.ingressClass | quote }}}
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: {{ .Release.Name }}-store
+spec:
+  secretName: {{ required "store.tlsSecret is required" .Values.store.tlsSecret }}
+  dnsNames: [{{ .Values.store.host | quote }}]
+  issuerRef: {name: {{ .Values.tls.issuerName }}, kind: Issuer}
+{{- if .Values.platform.enabled }}
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: {{ .Release.Name }}-gateway
+spec:
+  secretName: {{ required "platform.tlsSecret is required" .Values.platform.tlsSecret }}
+  dnsNames: [{{ .Values.platform.host | quote }}]
+  issuerRef: {name: {{ .Values.tls.issuerName }}, kind: Issuer}
+{{- end }}
+---
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: {{ .Release.Name }}-https
+spec:
+  redirectScheme: {scheme: https, permanent: true}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ .Release.Name }}-acme-solver
+spec:
+  podSelector:
+    matchLabels: {acme.cert-manager.io/http01-solver: "true"}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels: {kubernetes.io/metadata.name: kube-system}
+          podSelector:
+            matchLabels: {app.kubernetes.io/name: traefik}
+      ports: [{protocol: TCP, port: 8089}]
+{{- end }}

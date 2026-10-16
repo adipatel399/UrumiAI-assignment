@@ -51,3 +51,7 @@ External clients use `http://gateway.localhost:8080/mcp` and their own `Authoriz
 - [MCP TypeScript client guide](https://ts.sdk.modelcontextprotocol.io/client)
 - [MCP TypeScript server guide](https://ts.sdk.modelcontextprotocol.io/server)
 - [node-postgres transactions](https://node-postgres.com/features/transactions)
+
+## Production configuration and lifecycle
+
+The same chart is deployed on Azure k3s with public HTTPS, independent installation Secrets, immutable CPU-compatible images imported over SSH, and larger local-path claims. No application routing logic or separate chart fork was needed. The Kubernetes API remains private behind an SSH tunnel. See [deployment details](production-deployment.md) and [upgrade/recovery](upgrades-and-recovery.md). A clean installation and isolated backup/restore rehearsal passed; one VM and local disks are intentionally not highly available.

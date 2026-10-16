@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """Exercise real local NetworkPolicy paths; no cloud resource creation or credential output."""
-import json, subprocess, uuid
+import json, subprocess, uuid, argparse
 
-def run(*args,**kwargs): return subprocess.run(['kubectl',*args],check=True,text=True,**kwargs)
-if run('config','current-context',capture_output=True).stdout.strip()!='k3d-urumi':
+parser=argparse.ArgumentParser();parser.add_argument('--context',default='k3d-urumi');options=parser.parse_args()
+def run(*args,**kwargs): return subprocess.run(['kubectl','--context',options.context,*args],check=True,text=True,**kwargs)
+if options.context=='k3d-urumi' and run('config','current-context',capture_output=True).stdout.strip()!='k3d-urumi':
     raise SystemExit('Select k3d-urumi before local security checks.')
 services=json.loads(run('get','services','-n','urumi','-o','json',capture_output=True).stdout)
 ips={s['metadata']['name']:s['spec']['clusterIP'] for s in services['items']}
@@ -24,10 +25,11 @@ for workload in ['gateway','inventory-mcp','knowledge-mcp','woocommerce-mcp']:
     run('exec','-n','urumi','deployment/urumi-'+workload,'--','node','-e',
         "if(process.getuid()===0||require('node:fs').existsSync('/var/run/secrets/kubernetes.io/serviceaccount/token'))process.exit(1);console.log('PASS: non-root process; no Kubernetes service account token');")
 name='boundary-check-'+uuid.uuid4().hex[:8]
+image=json.loads(run('get','deployment/urumi-gateway','-n','urumi','-o','json',capture_output=True).stdout)['spec']['template']['spec']['containers'][0]['image']
 pod={'apiVersion':'v1','kind':'Pod','metadata':{'name':name,'namespace':'urumi'},'spec':{
     'restartPolicy':'Never','activeDeadlineSeconds':40,'automountServiceAccountToken':False,
     'securityContext':{'runAsNonRoot':True,'runAsUser':1000,'seccompProfile':{'type':'RuntimeDefault'}},
-    'containers':[{'name':'check','image':'urumi-platform:0.1.0','imagePullPolicy':'IfNotPresent','command':['node','-e',node_checks([
+    'containers':[{'name':'check','image':image,'imagePullPolicy':'IfNotPresent','command':['node','-e',node_checks([
         [ips['urumi-store'],80,False],[ips['urumi-gateway'],3000,False],[ips['urumi-woocommerce-mcp'],3000,False],
         [ips['urumi-platform-database'],5432,False],[ips['urumi-database'],3306,False]])],
         'securityContext':{'allowPrivilegeEscalation':False,'readOnlyRootFilesystem':True,'capabilities':{'drop':['ALL']}},

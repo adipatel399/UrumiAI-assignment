@@ -1,0 +1,3 @@
+<?php get_header(); ?>
+<main id="main-content" class="page-main"><div class="page-title"><span class="eyebrow">URUMI STUDIO</span><h1><?php the_title(); ?><span>.</span></h1><?php if (is_cart() || is_checkout()) : ?><div class="checkout-steps"><a href="<?php echo esc_url(wc_get_cart_url()); ?>" class="<?php echo is_cart() ? 'active' : ''; ?>">01 Your bag</a><span>→</span><a href="<?php echo esc_url(wc_get_checkout_url()); ?>" class="<?php echo is_checkout() ? 'active' : ''; ?>">02 Checkout</a><span>→</span><span>03 All yours</span></div><?php endif; ?></div><?php while(have_posts()):the_post();the_content();endwhile; ?></main>
+<?php get_footer(); ?>

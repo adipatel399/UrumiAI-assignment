@@ -5,7 +5,7 @@ Use fictional store data. Show real requests and results, and explain decisions 
 ## Before recording
 
 1. Confirm local and VPS workloads are ready, both public TLS certificates are valid, and all three upstream registrations are Connected.
-2. Open the administrator dashboard (user A), a guest storefront window, and MCP Inspector configured as member B with one gateway URL and B's own bearer key. Prepare the configuration privately; do not show the header editor.
+2. Open the administrator dashboard (user A; Integrations in the sidebar), a guest storefront window, and MCP Inspector configured as member B with one gateway URL and B's own bearer key. Prepare the configuration privately; do not show the header editor.
 3. Use a fresh product SKU for creation; check existing state before repeating a write whose response was lost. Allow free-plan token quotas to reset between model-heavy turns.
 4. Keep a local and remote Kubernetes terminal ready, each with an explicit context. Verify the context before any outage test.
 5. Prepare the recording chapters below. Leave time to show each actual result; do not substitute a successful-looking mock UI.
@@ -21,7 +21,7 @@ Explain why Node/TypeScript reduces implementation complexity, the official SDK 
 ### Store and chat as user A
 
 - Open the storefront as a guest.
-- In dashboard chat, enable writes for one message and ask to create a virtual product with a name, decimal price and fresh SKU. Show `store__create_product` activity and the real product page.
+- In AI workspace, enable Approve changes for this message for one message and ask to create a virtual product with a name, decimal price and fresh SKU. Show `store__create_product` activity and the real product page.
 - Add it to the cart and complete COD checkout by hand with fictional details. Show the order-received number and total.
 - Open WooCommerce administration and confirm the order.
 - Return to chat and ask today's orders. Show `period: today`, the configured Asia/Kolkata timezone, and the same order.
@@ -39,7 +39,7 @@ Explain why Node/TypeScript reduces implementation complexity, the official SDK 
 - Revoke B's key in the admin dashboard. Replay the next Inspector call; it must fail immediately without waiting for a new session.
 - Disable inventory. Refresh tool discovery in chat and Inspector; inventory tools must disappear. A remembered-name call is rejected too. Re-enable it afterward.
 - Temporarily scale inventory to zero or delete its pod during a controlled check. Refresh dashboard status until Unreachable is observed. Call store/knowledge successfully, show failure counters/latency, then restore inventory and show recovery.
-- Open the audit view and show the correct admin/member, server/tool, timestamps, duration and outcome for success and rejection.
+- Open Audit trail and show the correct admin/member, server/tool, timestamps, duration and outcome for success and rejection.
 
 ### Kubernetes and security
 

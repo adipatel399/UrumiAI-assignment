@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "tsc -p tsconfig.json && node -e \"require('node:fs').copyFileSync('src/schema.sql','dist/src/schema.sql')\" && esbuild ui/app.jsx --bundle --minify --outfile=dist/ui/app.js && node -e \"require('node:fs').copyFileSync('ui/index.html','dist/ui/index.html')\"",
+    "build": "tsc -p tsconfig.json && node -e \"require('node:fs').copyFileSync('src/schema.sql','dist/src/schema.sql')\" && esbuild ui/app.jsx --bundle --minify --outfile=dist/ui/app.js && node -e \"for(const f of ['index.html','styles.css','favicon.svg']) require('node:fs').copyFileSync('ui/'+f,'dist/ui/'+f)\"",
     "start": "node dist/src/index.js",
     "test": "tsx --test test/*.test.ts",
     "smoke": "node dist/test/cluster.js"

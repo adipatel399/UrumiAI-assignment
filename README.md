@@ -111,3 +111,7 @@ The platform was also installed from empty volumes in a disposable local cluster
 For a configured installation, run `GATEWAY_URL=YOUR_URL URUMI_CREDENTIAL_DIR=PRIVATE_DIRECTORY node scripts/check-installation.mjs` for the read-only login/discovery/routing probe. The temporary probe key is revoked afterward. `scripts/prepare-demo.mjs` prepares independent demo users and a private Inspector configuration without printing keys.
 
 MCP Inspector 2.11.0 was verified as member B with only the gateway URL/key: six tools, today's orders, an external question spanning inventory and knowledge, and rejection after revocation. The optional external-question helper delegates every MCP request to the real Inspector CLI. See [the live demo and submission runbook](docs/demo-runbook.md) for client setup, the required two-user flow, narration topics, and recording hygiene.
+
+## Workspace and storefront experience
+
+The workspace includes a live overview, integration cards, a searchable tool library, team access controls, API keys, audit tables, observability, and a dedicated chat workspace with tool activity. Its figures come from the real APIs. The responsive Urumi Studio storefront uses a custom WordPress theme with self-hosted illustrative photography, native WooCommerce cart and checkout, and image fallbacks for products created through chat. See [presentation design and photo credits](docs/storefront-design.md).

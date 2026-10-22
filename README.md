@@ -6,20 +6,16 @@ A WooCommerce hosting platform on Kubernetes with a React dashboard, shared MCP 
 
 No installation or provider API key is needed to use the hosted demo.
 
-- [Dashboard](https://gateway.85.211.243.237.sslip.io/)
-- [WooCommerce storefront](https://store.85.211.243.237.sslip.io/shop/)
-- [WooCommerce administration](https://store.85.211.243.237.sslip.io/wp-admin/)
-- MCP endpoint: `https://gateway.85.211.243.237.sslip.io/mcp`
+| Application | Account | Credentials file |
+| --- | --- | --- |
+| [Dashboard](https://gateway.85.211.243.237.sslip.io/) | Dashboard admin | [Open admin credentials](docs/reviewer-credentials/dashboard-admin.json) |
+| [Dashboard](https://gateway.85.211.243.237.sslip.io/) | Dashboard member | [Open member credentials](docs/reviewer-credentials/dashboard-member.json) |
+| [WooCommerce administration](https://store.85.211.243.237.sslip.io/wp-admin/) | WooCommerce shop manager | [Open WooCommerce credentials](docs/reviewer-credentials/woocommerce.json) |
+| [Storefront](https://store.85.211.243.237.sslip.io/shop/) | Guest customer | No login required |
 
-### Working reviewer logins
+Open the application, then copy its login from the corresponding credentials file. These dedicated demo accounts are intentionally public; provider and infrastructure credentials remain private.
 
-These are dedicated, intentionally public accounts for the live assessment demo. Copy the username/email and password from this table, or open [reviewer-access.json](docs/reviewer-access.json).
-
-| Account | Email / username | Password | Use |
-| --- | --- | --- | --- |
-| Dashboard admin | `reviewer-admin@example.test` | `IhQJOz0iPpA0q3EaQHocdob8` | Integrations, team controls, audit, chat writes and store management |
-| Dashboard member | `reviewer-member@example.test` | `m-Cb3RR5aUEt8R7LJhT53Yor` | Read-only tools, chat and personal API keys |
-| WooCommerce shop manager | `reviewer_store` | `J2U3ZkoWgZ9Jn3EEv4e-xgsH` | Inspect products and verify storefront orders |
+MCP endpoint: `https://gateway.85.211.243.237.sslip.io/mcp`. Sign in as the reviewer member and generate your own personal API key under **API keys**.
 
 ### Suggested review flow
 

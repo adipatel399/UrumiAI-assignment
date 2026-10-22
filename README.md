@@ -2,6 +2,27 @@
 
 A WooCommerce hosting platform on Kubernetes with a React dashboard, shared MCP gateway, team chat and multi-store provisioning. The same Helm chart runs on local k3d and the hosted Azure k3s deployment.
 
+## What the app does
+
+- Runs a WooCommerce storefront with cart, guest checkout and cash-on-delivery test orders.
+- Exposes products and orders through a custom WooCommerce MCP server using Streamable HTTP and the WooCommerce REST API.
+- Aggregates WooCommerce, demo inventory and knowledge tools, with namespaced routing, per-role permissions and upstream timeouts.
+- Provides a chat agent that calls the gateway as the signed-in user, with explicit approval for writes and visible tool activity.
+- Manages team invitations, personal API keys, revocation, attributed audit logs and per-server metrics.
+- Optionally provisions independent stores from the dashboard, with automatic MCP registration, namespace isolation, quotas, retry and clean deletion.
+
+## Screenshots
+
+Captured from the running assessment deployment; available stores, counts and products change during review.
+
+### Team workspace
+
+![Workspace overview with integrations, tool counts and attributed activity](docs/images/workspace.png)
+
+### WooCommerce storefront
+
+![Urumi Studio storefront with collection navigation and photography](docs/images/storefront.png)
+
 ## Review the live application
 
 No installation or provider API key is needed to use the hosted demo.
@@ -26,27 +47,6 @@ MCP endpoint: `https://gateway.85.211.243.237.sslip.io/mcp`. Sign in as the revi
 5. Open **Stores** to create disposable stores. After they reach Ready, place today's test orders in two stores and ask chat to compare them. Delete one of your disposable stores, check its tools disappear, and confirm the other remains available.
 
 See the [reviewer walkthrough](docs/reviewer-guide.md) for full two-user, permissions, audit, multi-store and failure-isolation checks. The demo shares state, so products and counts may differ from the recording. Groq quotas still apply to hosted chat. Provider and infrastructure credentials remain private.
-
-## What the app does
-
-- Runs a WooCommerce storefront with cart, guest checkout and cash-on-delivery test orders.
-- Exposes products and orders through a custom WooCommerce MCP server using Streamable HTTP and the WooCommerce REST API.
-- Aggregates WooCommerce, demo inventory and knowledge tools, with namespaced routing, per-role permissions and upstream timeouts.
-- Provides a chat agent that calls the gateway as the signed-in user, with explicit approval for writes and visible tool activity.
-- Manages team invitations, personal API keys, revocation, attributed audit logs and per-server metrics.
-- Optionally provisions independent stores from the dashboard, with automatic MCP registration, namespace isolation, quotas, retry and clean deletion.
-
-## Screenshots
-
-Captured from the running assessment deployment; available stores, counts and products change during review.
-
-### Team workspace
-
-![Workspace overview with integrations, tool counts and attributed activity](docs/images/workspace.png)
-
-### WooCommerce storefront
-
-![Urumi Studio storefront with collection navigation and photography](docs/images/storefront.png)
 
 ## Verification and implementation evidence
 

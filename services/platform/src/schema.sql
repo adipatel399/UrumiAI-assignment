@@ -37,3 +37,18 @@ ALTER TABLE api_keys ADD COLUMN IF NOT EXISTS expires_at timestamptz;
 ALTER TABLE api_keys ADD COLUMN IF NOT EXISTS session_hash text;
 CREATE INDEX IF NOT EXISTS audit_server ON audit_log(server_id);
 INSERT INTO schema_migrations(version) VALUES(2) ON CONFLICT DO NOTHING;
+
+CREATE TABLE IF NOT EXISTS managed_stores(
+  id uuid PRIMARY KEY, owner_id uuid NOT NULL REFERENCES users(id),
+  name text NOT NULL, namespace text UNIQUE NOT NULL, slug text UNIQUE NOT NULL,
+  url text NOT NULL, spec jsonb NOT NULL,
+  status text NOT NULL DEFAULT 'Provisioning' CHECK(status IN ('Provisioning','Ready','Failed','Deleting','Deleted')),
+  stage text NOT NULL DEFAULT 'Queued', error text,
+  attempt integer NOT NULL DEFAULT 1,
+  upstream_id uuid REFERENCES upstreams(id) ON DELETE SET NULL,
+  volume_names text[] NOT NULL DEFAULT '{}',
+  created_at timestamptz NOT NULL DEFAULT now(), started_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(), deleted_at timestamptz
+);
+CREATE INDEX IF NOT EXISTS managed_stores_queue ON managed_stores(status,created_at);
+INSERT INTO schema_migrations(version) VALUES(3) ON CONFLICT DO NOTHING;

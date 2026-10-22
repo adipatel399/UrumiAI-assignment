@@ -7,6 +7,9 @@ p.add_argument('--backup',required=True)
 p.add_argument('--confirm-replace-data',action='store_true')
 a=p.parse_args()
 if not a.confirm_replace_data: p.error('Restoration overwrites current application data; pass --confirm-replace-data only for the intended target.')
+# The single-store recovery format cannot represent managed store volumes.
+managed=json.loads(subprocess.check_output(['kubectl','--context',a.context,'get','namespaces','-l','app.kubernetes.io/managed-by=urumi-store-provisioner','-o','json']))['items']
+if managed: raise SystemExit('Managed stores exist. This helper supports the primary-store recovery format only; follow docs/multi-store.md for managed-store backup requirements.')
 folder=pathlib.Path(a.backup).resolve()
 manifest=json.loads((folder/'manifest.json').read_text())
 if manifest['format']!=1: raise SystemExit('Unsupported backup format.')

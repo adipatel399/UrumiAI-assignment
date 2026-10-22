@@ -73,6 +73,10 @@ spec:
     - from:
         - podSelector:
             matchLabels: {app: "{{ .Release.Name }}-gateway"}
+        {{- if .Values.provisioning.enabled }}
+        - podSelector:
+            matchLabels: {app: "{{ .Release.Name }}-provisioner"}
+        {{- end }}
       ports: [{protocol: TCP, port: 5432}]
 {{- range $mode := list "gateway" "inventory-mcp" "knowledge-mcp" }}
 ---
@@ -101,6 +105,7 @@ spec:
           ports: [{name: http, containerPort: 3000}]
           env:
             {{- if eq $mode "gateway" }}
+            {{- include "urumi.storeEnvironment" $ | nindent 12 }}
             - {name: PGHOST, value: "{{ $.Release.Name }}-platform-database"}
             - {name: PGUSER, value: urumi}
             - {name: PGDATABASE, value: urumi}

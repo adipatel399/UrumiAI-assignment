@@ -45,6 +45,11 @@ function Icon({ name, size = 20, ...props }) {
 }
 const pages = {
   overview: ["Overview", "Your integrations, at a glance.", "grid"],
+  stores: [
+    "Stores",
+    "A space for every store. Connected from the start.",
+    "shop",
+  ],
   chat: ["AI workspace", "One conversation. All your tools.", "chat"],
   servers: [
     "Integrations",
@@ -80,9 +85,9 @@ function Badge({ value }) {
     <span
       className={
         "badge " +
-        (/connected|active|success|completed/i.test(s)
+        (/connected|active|success|completed|ready/i.test(s)
           ? "good"
-          : /error|reject|unreachable/i.test(s)
+          : /error|reject|unreachable|failed/i.test(s)
             ? "bad"
             : "neutral")
       }
@@ -425,7 +430,7 @@ function App() {
             .filter(
               ([k]) =>
                 user.role === "admin" ||
-                ["overview", "chat", "tools", "keys"].includes(k),
+                ["overview", "stores", "chat", "tools", "keys"].includes(k),
             )
             .map(([k, [name, , icon]]) => (
               <button
@@ -519,7 +524,7 @@ function App() {
               <p>{pages[tab][1]}</p>
             </div>
             <div className="heading-actions">
-              {tab !== "chat" && (
+              {!["chat", "stores"].includes(tab) && (
                 <button
                   className="btn secondary"
                   onClick={load}
@@ -677,7 +682,10 @@ function App() {
               )}
             </>
           )}
-          {tab === "chat" && <Chat api={api} user={user} toolCount={tools.length} />}
+          {tab === "stores" && <Stores api={api} user={user} onSync={load} />}
+          {tab === "chat" && (
+            <Chat api={api} user={user} toolCount={tools.length} />
+          )}
           {tab === "servers" && (
             <>
               <div className="integration-summary">
@@ -1232,6 +1240,419 @@ function App() {
     </div>
   );
 }
+// Render the assistant's common Markdown as React text nodes, never HTML.
+function AssistantText({ text }) {
+  const inline = (value) => value.split(/(\*\*[^*]+\*\*|`[^`]+`)/g).map((part, i) =>
+    part.startsWith("**") && part.endsWith("**") ? <strong key={i}>{part.slice(2, -2)}</strong> :
+    part.startsWith("`") && part.endsWith("`") ? <code key={i}>{part.slice(1, -1)}</code> : part);
+  const lines = text.split("\n"), blocks = [];
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i].trim();
+    if (!line) continue;
+    if (line.startsWith("|") && i + 1 < lines.length && /^\s*\|?\s*:?-{3}/.test(lines[i + 1])) {
+      const cells = (row) => row.trim().replace(/^\|/, "").replace(/\|$/, "").split("|").map(c => c.trim());
+      const head = cells(line), rows = []; i += 2;
+      while (i < lines.length && lines[i].trim().startsWith("|")) rows.push(cells(lines[i++]));
+      i--;
+      blocks.push(<div className="answer-table" key={i}><table><thead><tr>{head.map((c, j) => <th key={j}>{inline(c)}</th>)}</tr></thead><tbody>{rows.map((r, j) => <tr key={j}>{r.map((c, k) => <td key={k}>{inline(c)}</td>)}</tr>)}</tbody></table></div>);
+    } else if (/^#{1,6} /.test(line)) blocks.push(<h4 key={i}>{inline(line.replace(/^#{1,6} /, ""))}</h4>);
+    else if (/^[-*] /.test(line)) blocks.push(<p className="answer-list-item" key={i}>• {inline(line.slice(2))}</p>);
+    else blocks.push(<p key={i}>{inline(line)}</p>);
+  }
+  return <div className="assistant-answer">{blocks}</div>;
+}
+
+function Stores({ api, user, onSync }) {
+  const [rows, R] = useState([]),
+    [settings, S] = useState(null),
+    [error, E] = useState(""),
+    [dialog, M] = useState(null),
+    [busy, B] = useState(false),
+    [confirmation, C] = useState(""),
+    [notice, N] = useState(""),
+    [loaded, L] = useState(false);
+  async function load() {
+    try {
+      const d = await api("stores");
+      R(d.stores);
+      S(d.config);
+      E("");
+    } catch (e) {
+      E(e.message);
+    } finally {
+      L(true);
+    }
+  }
+  useEffect(() => {
+    load();
+    const timer = setInterval(load, 5000);
+    return () => clearInterval(timer);
+  }, []);
+  async function submit(e) {
+    e.preventDefault();
+    B(true);
+    E("");
+    try {
+      if (dialog.type === "delete") {
+        if (confirmation !== dialog.store.name) return;
+        await api("stores/" + dialog.store.id, "DELETE");
+        N(
+          "Gateway tools removed. Namespace and storage cleanup is in progress.",
+        );
+      } else {
+        const name = new FormData(e.currentTarget).get("name");
+        await api("stores", "POST", { id: dialog.id, name });
+        N(
+          "Store queued. You can leave this page while provisioning continues.",
+        );
+      }
+      M(null);
+      await load();
+      onSync();
+    } catch (e) {
+      E(e.message);
+    } finally {
+      B(false);
+    }
+  }
+  const active = rows.filter((r) => r.status === "Ready").length,
+    progressing = rows.filter((r) => r.status === "Provisioning").length;
+  return (
+    <div className="stores-view">
+      <div className="stores-intro">
+        <div>
+          <span className="feature-kicker">
+            <Icon name="shop" size={16} /> YOUR STOREFRONT COLLECTION
+          </span>
+          <h2>
+            Start something
+            <br />
+            <em>of your own.</em>
+          </h2>
+          <p>
+            Create an isolated WooCommerce store. Its tools join your gateway
+            automatically, with the same team permissions.
+          </p>
+          <div className="store-guardrails">
+            <span>
+              <Icon name="lock" size={13} /> Separate credentials
+            </span>
+            <span>
+              <Icon name="grid" size={13} /> Isolated namespaces
+            </span>
+            <span>
+              <Icon name="tool" size={13} /> Connected tools
+            </span>
+          </div>
+        </div>
+        <div className="store-intro-action">
+          <div>
+            <strong>{active}</strong>
+            <span>ready to explore</span>
+          </div>
+          <button
+            className="btn light"
+            disabled={!settings?.enabled || busy}
+            onClick={() => {
+              M({ type: "create", id: crypto.randomUUID() });
+              E("");
+            }}
+          >
+            <Icon name="plus" size={16} />
+            Create store
+          </button>
+        </div>
+      </div>
+      <div className="stores-toolbar">
+        <div>
+          <span className="live-dot" />
+          {rows.length} stores <span className="slash">/</span> {progressing}{" "}
+          provisioning
+        </div>
+        <div>
+          <span className="muted">
+            Up to {settings?.max_per_user ?? "—"} stores per person
+          </span>
+          <button className="btn secondary small" onClick={load}>
+            <Icon name="refresh" size={14} />
+            Refresh
+          </button>
+        </div>
+      </div>
+      {error && (
+        <div role="alert" className="alert">
+          {error}
+        </div>
+      )}
+      {notice && (
+        <div role="status" className="notice">
+          {notice}
+          <button onClick={() => N("")} aria-label="Dismiss store notification">
+            <Icon name="close" size={15} />
+          </button>
+        </div>
+      )}
+      {settings && !settings.enabled && (
+        <div className="info-strip">
+          <Icon name="lock" />
+          <p>
+            Store provisioning is disabled on this installation. An operator can
+            enable it through Helm values.
+          </p>
+        </div>
+      )}
+      {!loaded ? (
+        <Empty title="Opening your collection" text="Loading store status…" />
+      ) : rows.length ? (
+        <div className="managed-store-grid">
+          {rows.map((r, i) => (
+            <article className="panel managed-store" key={r.id}>
+              <div className={"store-preview tone-" + (i % 3)}>
+                <div className="preview-browser">
+                  <i />
+                  <i />
+                  <i />
+                  <span>URUMI STUDIO</span>
+                </div>
+                <div className="preview-content">
+                  <span>SPACE FOR YOUR NEXT IDEA</span>
+                  <h3>{r.name}</h3>
+                  <div className="preview-books">
+                    <i />
+                    <i />
+                    <i />
+                  </div>
+                </div>
+                <span className="preview-status">
+                  <Badge value={r.status} />
+                </span>
+              </div>
+              <div className="managed-store-body">
+                <div className="card-heading">
+                  <h3>{r.name}</h3>
+                  <span className="mini-label">WOOCOMMERCE</span>
+                </div>
+                <span className="store-owner">
+                  {r.owner_id === user.id ? "Your store" : r.owner_email} ·
+                  Created {date(r.created_at)}
+                </span>
+                <p className="store-url">{r.url.replace(/^https?:\/\//, "")}</p>
+                {r.status === "Provisioning" && (
+                  <div className="provision-progress">
+                    <div>
+                      <span />
+                      <span />
+                      <span />
+                    </div>
+                    <p>
+                      <i className="live-dot" />
+                      {r.stage}
+                    </p>
+                  </div>
+                )}
+                {r.status === "Deleting" && (
+                  <p className="cleanup-status">
+                    <Icon name="refresh" size={13} className="spin" />
+                    {r.stage}
+                  </p>
+                )}
+                {r.error && <p className="store-error">{r.error}</p>}
+                {r.status === "Ready" && (
+                  <div className="store-connected">
+                    <Icon name="check" size={14} />
+                    {r.tools?.length || 0} tools connected to your gateway
+                  </div>
+                )}
+                <details className="store-resource-details">
+                  <summary>
+                    Resources and tool names
+                    <Icon name="code" size={14} />
+                  </summary>
+                  <p>
+                    Namespace <code>{r.namespace}</code>
+                  </p>
+                  <p>
+                    Dedicated database, content volume, credentials and network
+                    policies.
+                  </p>
+                  {r.status === "Ready" &&
+                    r.tools?.map((t) => (
+                      <code key={t.public_name}>{t.public_name}</code>
+                    ))}
+                </details>
+                <div className="managed-store-actions">
+                  {r.status === "Ready" ? (
+                    <a
+                      className="btn primary small"
+                      href={r.url + "/shop/"}
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      Open store
+                      <Icon name="external" size={13} />
+                    </a>
+                  ) : r.status === "Failed" ? (
+                    <button
+                      className="btn secondary small"
+                      disabled={busy}
+                      onClick={async () => {
+                        B(true);
+                        try {
+                          await api("stores/" + r.id + "/retry", "POST", {});
+                          await load();
+                          N(
+                            "Retry queued. Existing resources and credentials will be reused.",
+                          );
+                        } catch (e) {
+                          E(e.message);
+                        } finally {
+                          B(false);
+                        }
+                      }}
+                    >
+                      <Icon name="refresh" size={13} />
+                      Retry setup
+                    </button>
+                  ) : (
+                    <span className="muted">
+                      {r.status === "Deleting"
+                        ? "Cleaning up safely…"
+                        : "Setting things up…"}
+                    </span>
+                  )}
+                  {r.status !== "Deleting" && (
+                    <button
+                      className="btn ghost small store-delete"
+                      onClick={() => {
+                        M({ type: "delete", store: r });
+                        C("");
+                        E("");
+                      }}
+                    >
+                      Delete store
+                    </button>
+                  )}
+                </div>
+              </div>
+            </article>
+          ))}
+        </div>
+      ) : (
+        <Empty
+          title="Your next store starts here"
+          text="Create a store and we’ll connect its products and orders to your gateway."
+        />
+      )}
+      <div className="info-strip">
+        <Icon name="lock" />
+        <p>
+          <strong>Independence by design.</strong> Each store has its own
+          database, credentials, volumes, quotas, and network boundary. Deleting
+          it removes its gateway tools and Kubernetes resources.
+        </p>
+      </div>
+      {dialog && (
+        <Modal
+          title={
+            dialog.type === "create"
+              ? "Create your next store"
+              : "Delete " + dialog.store.name + "?"
+          }
+          onClose={() => {
+            if (!busy) {
+              M(null);
+              E("");
+            }
+          }}
+        >
+          <form onSubmit={submit}>
+            {dialog.type === "create" ? (
+              <>
+                <p className="muted">
+                  We’ll prepare WooCommerce, the Urumi Studio theme, and a
+                  private MCP server. Your team can use its tools once the store
+                  is ready.
+                </p>
+                <Field
+                  label="Store name"
+                  name="name"
+                  placeholder="e.g. Sunday Studio"
+                  minLength={2}
+                  maxLength={60}
+                />
+                <div className="store-create-facts">
+                  <span>
+                    <Icon name="check" size={14} />
+                    Automatic gateway registration
+                  </span>
+                  <span>
+                    <Icon name="check" size={14} />
+                    Same storefront design and guest checkout
+                  </span>
+                  <span>
+                    <Icon name="check" size={14} />
+                    Resource quotas and a{" "}
+                    {Math.round((settings?.timeout_seconds ?? 900) / 60)} minute
+                    provisioning deadline
+                  </span>
+                </div>
+              </>
+            ) : (
+              <>
+                <p className="delete-warning">
+                  This permanently removes this store’s products, orders,
+                  database, credentials and volumes. Its tools disappear from
+                  the gateway immediately. Other stores are unaffected.
+                </p>
+                <label>
+                  Type <strong>{dialog.store.name}</strong> to confirm
+                  <input
+                    name="confirmation"
+                    required
+                    value={confirmation}
+                    onChange={(e) => C(e.target.value)}
+                    autoComplete="off"
+                  />
+                </label>
+              </>
+            )}
+            {error && (
+              <p role="alert" className="alert">
+                {error}
+              </p>
+            )}
+            <div className="modal-actions">
+              <button
+                className="btn secondary"
+                type="button"
+                onClick={() => M(null)}
+                disabled={busy}
+              >
+                Cancel
+              </button>
+              <button
+                className={
+                  "btn " + (dialog.type === "delete" ? "danger" : "primary")
+                }
+                disabled={
+                  busy ||
+                  (dialog.type === "delete" &&
+                    confirmation !== dialog.store.name)
+                }
+              >
+                {busy
+                  ? "Working…"
+                  : dialog.type === "delete"
+                    ? "Delete store permanently"
+                    : "Create store"}
+              </button>
+            </div>
+          </form>
+        </Modal>
+      )}
+    </div>
+  );
+}
 function Field({ label, ...props }) {
   return (
     <label>
@@ -1512,7 +1933,7 @@ function Chat({ api, user, toolCount }) {
                   <strong>
                     {m.role === "user" ? "You" : "Urumi assistant"}
                   </strong>
-                  <div className="message-content">{m.content}</div>
+                  <div className="message-content">{m.role === "assistant" ? <AssistantText text={m.content} /> : m.content}</div>
                 </div>
               </article>
             ))

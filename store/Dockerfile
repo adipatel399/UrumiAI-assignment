@@ -11,3 +11,4 @@ COPY bootstrap.sh bootstrap.php install.php /opt/urumi/
 
 COPY theme /opt/urumi/theme
 COPY studio-bootstrap.php /opt/urumi/studio-bootstrap.php
+COPY managed-bootstrap.sh managed-api.php /opt/urumi/

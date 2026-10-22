@@ -1,16 +1,17 @@
-import { chatInput, runChat } from './chat.js';
-import { metrics, prometheus } from './metrics.js';
-import express from 'express';
-import { fileURLToPath } from 'node:url';
-import { z } from 'zod';
-import { Server } from '@modelcontextprotocol/sdk/server/index.js';
-import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
+import { StoreRepository, StoreError, storeSettings } from "./stores.js";
+import { chatInput, runChat } from "./chat.js";
+import { metrics, prometheus } from "./metrics.js";
+import express from "express";
+import { fileURLToPath } from "node:url";
+import { z } from "zod";
+import { Server } from "@modelcontextprotocol/sdk/server/index.js";
+import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import {
   CallToolRequestSchema,
   ListToolsRequestSchema,
-} from '@modelcontextprotocol/sdk/types.js';
-import { Database, type Principal } from './database.js';
-import { Upstreams, exposedName, failure } from './upstreams.js';
+} from "@modelcontextprotocol/sdk/types.js";
+import { Database, type Principal } from "./database.js";
+import { Upstreams, exposedName, failure } from "./upstreams.js";
 import {
   csrf,
   digest,
@@ -20,7 +21,7 @@ import {
   passwordMatches,
   token,
   validateUpstream,
-} from './security.js';
+} from "./security.js";
 
 class ApiError extends Error {
   constructor(
@@ -47,13 +48,14 @@ const credential = z.object({
     .refine(
       (x) =>
         ![
-          'host',
-          'cookie',
-          'origin',
-          'connection',
-          'content-length',
-          'mcp-session-id',
-        ].includes(x.toLowerCase()) && !x.toLowerCase().startsWith('x-forwarded-'),
+          "host",
+          "cookie",
+          "origin",
+          "connection",
+          "content-length",
+          "mcp-session-id",
+        ].includes(x.toLowerCase()) &&
+        !x.toLowerCase().startsWith("x-forwarded-"),
     ),
   value: z
     .string()
@@ -74,8 +76,8 @@ function parse<T>(schema: z.ZodType<T>, value: unknown): T {
   if (!result.success)
     throw new ApiError(
       400,
-      'Invalid input fields: ' +
-        result.error.issues.map((x) => x.path.join('.')).join(', '),
+      "Invalid input fields: " +
+        result.error.issues.map((x) => x.path.join(".")).join(", "),
     );
   return result.data;
 }
@@ -90,39 +92,40 @@ export function createGateway(
   providerFetch?: typeof fetch,
 ) {
   const app = express();
+  const stores = new StoreRepository(db.pool, storeSettings());
   app.use((_req, res, next) => {
     res.set({
-      'X-Content-Type-Options': 'nosniff',
-      'Referrer-Policy': 'no-referrer',
-      'X-Frame-Options': 'DENY',
-      'Content-Security-Policy':
+      "X-Content-Type-Options": "nosniff",
+      "Referrer-Policy": "no-referrer",
+      "X-Frame-Options": "DENY",
+      "Content-Security-Policy":
         "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'",
     });
     next();
   });
-  app.use(express.static(fileURLToPath(new URL('../ui/', import.meta.url))));
-  app.get('/invite', (_req, res) =>
-    res.sendFile(fileURLToPath(new URL('../ui/index.html', import.meta.url))),
+  app.use(express.static(fileURLToPath(new URL("../ui/", import.meta.url))));
+  app.get("/invite", (_req, res) =>
+    res.sendFile(fileURLToPath(new URL("../ui/index.html", import.meta.url))),
   );
-  app.disable('x-powered-by');
-  app.use(express.json({ limit: '64kb' }));
+  app.disable("x-powered-by");
+  app.use(express.json({ limit: "64kb" }));
   const config = db.config;
   const cookie = (req: express.Request) => {
     try {
       return decodeURIComponent(
         req.headers.cookie
-          ?.split(';')
+          ?.split(";")
           .map((x) => x.trim())
-          .find((x) => x.startsWith('urumi_session='))
-          ?.slice(14) ?? '',
+          .find((x) => x.startsWith("urumi_session="))
+          ?.slice(14) ?? "",
       );
     } catch {
-      return '';
+      return "";
     }
   };
   const requireAdmin = (principal: Principal) => {
-    if (principal.role !== 'admin')
-      throw new ApiError(403, 'Administrator access required.');
+    if (principal.role !== "admin")
+      throw new ApiError(403, "Administrator access required.");
   };
   async function audit(
     user: Principal | null,
@@ -132,7 +135,7 @@ export function createGateway(
     error?: string,
   ) {
     const result = await db.query(
-      'INSERT INTO audit_log(user_id,key_id,server_id,server_name,tool,outcome,error_code) VALUES($1,$2,$3,$4,$5,$6,$7) RETURNING id',
+      "INSERT INTO audit_log(user_id,key_id,server_id,server_name,tool,outcome,error_code) VALUES($1,$2,$3,$4,$5,$6,$7) RETURNING id",
       [
         user?.id ?? null,
         user?.keyId ?? null,
@@ -145,15 +148,18 @@ export function createGateway(
     );
     return result.rows[0].id as string;
   }
-  async function authenticate(req: express.Request, mcp = false): Promise<Principal> {
-    const bearer = req.headers.authorization?.startsWith('Bearer ')
+  async function authenticate(
+    req: express.Request,
+    mcp = false,
+  ): Promise<Principal> {
+    const bearer = req.headers.authorization?.startsWith("Bearer ")
       ? req.headers.authorization.slice(7)
       : undefined;
     let user: any;
     if (bearer) {
       user = (
         await db.query(
-          'SELECT u.id,u.email,u.role,u.active,k.id AS key_id,k.revoked_at,k.expires_at,k.purpose,k.session_hash,EXISTS(SELECT 1 FROM sessions s WHERE s.token_hash=k.session_hash AND s.expires_at>now()) AS session_valid FROM api_keys k JOIN users u ON u.id=k.user_id WHERE k.token_hash=$1',
+          "SELECT u.id,u.email,u.role,u.active,k.id AS key_id,k.revoked_at,k.expires_at,k.purpose,k.session_hash,EXISTS(SELECT 1 FROM sessions s WHERE s.token_hash=k.session_hash AND s.expires_at>now()) AS session_valid FROM api_keys k JOIN users u ON u.id=k.user_id WHERE k.token_hash=$1",
           [digest(bearer)],
         )
       ).rows[0];
@@ -164,72 +170,83 @@ export function createGateway(
         !user ||
         !user.active ||
         user.revoked_at ||
-        (user.expires_at && new Date(user.expires_at).getTime() <= Date.now()) ||
-        (user.purpose === 'chat' && (!mcp || !user.session_valid))
+        (user.expires_at &&
+          new Date(user.expires_at).getTime() <= Date.now()) ||
+        (user.purpose === "chat" && (!mcp || !user.session_valid))
       ) {
-        if (mcp && req.body?.method === 'tools/call') {
-          const name = String(req.body?.params?.name ?? 'unknown');
+        if (mcp && req.body?.method === "tools/call") {
+          const name = String(req.body?.params?.name ?? "unknown");
           const row = (await upstreams.rows()).find((r) =>
-            name.startsWith(r.slug + '__'),
+            name.startsWith(r.slug + "__"),
           );
-          await audit(user ?? null, name, 'rejected', row, 'INVALID_OR_REVOKED_KEY');
+          await audit(
+            user ?? null,
+            name,
+            "rejected",
+            row,
+            "INVALID_OR_REVOKED_KEY",
+          );
         }
-        throw new ApiError(401, 'Invalid or revoked API key.');
+        throw new ApiError(401, "Invalid or revoked API key.");
       }
     } else if (!mcp) {
       const raw = cookie(req);
       if (raw)
         user = (
           await db.query(
-            'SELECT u.id,u.email,u.role,u.active FROM sessions s JOIN users u ON u.id=s.user_id WHERE s.token_hash=$1 AND s.expires_at>now()',
+            "SELECT u.id,u.email,u.role,u.active FROM sessions s JOIN users u ON u.id=s.user_id WHERE s.token_hash=$1 AND s.expires_at>now()",
             [digest(raw)],
           )
         ).rows[0];
-      if (!user?.active) throw new ApiError(401, 'Login required.');
+      if (!user?.active) throw new ApiError(401, "Login required.");
       user = { ...user, session: raw };
     } else {
-      if (req.body?.method === 'tools/call')
+      if (req.body?.method === "tools/call")
         await audit(
           null,
-          String(req.body?.params?.name ?? 'unknown'),
-          'rejected',
+          String(req.body?.params?.name ?? "unknown"),
+          "rejected",
           undefined,
-          'MISSING_KEY',
+          "MISSING_KEY",
         );
-      throw new ApiError(401, 'User API key required.');
+      throw new ApiError(401, "User API key required.");
     }
     return user;
   }
   app.use((req, res, next) => {
-    if (req.headers.origin && req.headers.origin !== new URL(config.PUBLIC_URL).origin) {
-      res.status(403).json({ error: 'Origin not allowed.' });
+    if (
+      req.headers.origin &&
+      req.headers.origin !== new URL(config.PUBLIC_URL).origin
+    ) {
+      res.status(403).json({ error: "Origin not allowed." });
       return;
     }
     next();
   });
-  app.get('/healthz', (_req, res) => {
-    res.json({ status: 'ok' });
+  app.get("/healthz", (_req, res) => {
+    res.json({ status: "ok" });
   });
-  app.get('/readyz', async (_req, res) => {
+  app.get("/readyz", async (_req, res) => {
     try {
-      await db.query('SELECT 1');
-      res.json({ status: 'ready' });
+      await db.query("SELECT 1");
+      res.json({ status: "ready" });
     } catch {
-      res.status(503).json({ status: 'database unavailable' });
+      res.status(503).json({ status: "database unavailable" });
     }
   });
-  app.use('/api', (_req, res, next) => {
-    res.set('Cache-Control', 'no-store');
+  app.use("/api", (_req, res, next) => {
+    res.set("Cache-Control", "no-store");
     next();
   });
   const attempts = new Map<string, { count: number; until: number }>();
-  app.post('/api/login', async (req, res) => {
-    const address = req.ip ?? 'unknown';
+  app.post("/api/login", async (req, res) => {
+    const address = req.ip ?? "unknown";
     const now = Date.now();
-    for (const [ip, state] of attempts) if (state.until < now) attempts.delete(ip);
+    for (const [ip, state] of attempts)
+      if (state.until < now) attempts.delete(ip);
     const state = attempts.get(address) ?? { count: 0, until: now + 900000 };
     if (state.count >= 10 || attempts.size > 10000)
-      throw new ApiError(429, 'Too many login attempts; try later.');
+      throw new ApiError(429, "Too many login attempts; try later.");
     state.count++;
     attempts.set(address, state);
     const input = parse(
@@ -237,31 +254,33 @@ export function createGateway(
       req.body,
     );
     const user = (
-      await db.query('SELECT * FROM users WHERE email=$1 AND active=true', [input.email])
+      await db.query("SELECT * FROM users WHERE email=$1 AND active=true", [
+        input.email,
+      ])
     ).rows[0];
     const valid = await passwordMatches(
       input.password,
-      user?.password_hash ?? (await passwordHash('nonexistent-account-check')),
+      user?.password_hash ?? (await passwordHash("nonexistent-account-check")),
     );
-    if (!user || !valid) throw new ApiError(401, 'Invalid email or password.');
+    if (!user || !valid) throw new ApiError(401, "Invalid email or password.");
     const raw = token();
     await db.query(
       "INSERT INTO sessions(token_hash,user_id,expires_at) VALUES($1,$2,now()+interval '24 hours')",
       [digest(raw), user.id],
     );
-    res.cookie('urumi_session', raw, {
+    res.cookie("urumi_session", raw, {
       httpOnly: true,
-      sameSite: 'strict',
-      secure: config.COOKIE_SECURE === 'true',
+      sameSite: "strict",
+      secure: config.COOKIE_SECURE === "true",
       maxAge: 86400000,
-      path: '/',
+      path: "/",
     });
     res.json({
       user: safeUser(user),
       csrf_token: csrf(raw, config.ENCRYPTION_KEY),
     });
   });
-  app.post('/api/invitations/accept', async (req, res) => {
+  app.post("/api/invitations/accept", async (req, res) => {
     const input = parse(
       z.object({ token: z.string().min(32).max(200), password }),
       req.body,
@@ -269,170 +288,208 @@ export function createGateway(
     const hash = await passwordHash(input.password);
     const client = await db.pool.connect();
     try {
-      await client.query('BEGIN');
+      await client.query("BEGIN");
       const invite = (
         await client.query(
-          'SELECT * FROM invitations WHERE token_hash=$1 AND accepted_at IS NULL AND expires_at>now() FOR UPDATE',
+          "SELECT * FROM invitations WHERE token_hash=$1 AND accepted_at IS NULL AND expires_at>now() FOR UPDATE",
           [digest(input.token)],
         )
       ).rows[0];
       if (!invite)
-        throw new ApiError(400, 'Invitation is invalid, expired, or already accepted.');
+        throw new ApiError(
+          400,
+          "Invitation is invalid, expired, or already accepted.",
+        );
       const inserted = await client.query(
-        'INSERT INTO users(email,password_hash,role) VALUES($1,$2,$3) ON CONFLICT(email) DO NOTHING RETURNING id,email,role',
+        "INSERT INTO users(email,password_hash,role) VALUES($1,$2,$3) ON CONFLICT(email) DO NOTHING RETURNING id,email,role",
         [invite.email, hash, invite.role],
       );
-      if (!inserted.rowCount) throw new ApiError(409, 'User already exists.');
-      await client.query('UPDATE invitations SET accepted_at=now() WHERE id=$1', [
-        invite.id,
-      ]);
-      await client.query('COMMIT');
+      if (!inserted.rowCount) throw new ApiError(409, "User already exists.");
+      await client.query(
+        "UPDATE invitations SET accepted_at=now() WHERE id=$1",
+        [invite.id],
+      );
+      await client.query("COMMIT");
       res.status(201).json({ user: inserted.rows[0] });
     } catch (error) {
-      await client.query('ROLLBACK');
+      await client.query("ROLLBACK");
       throw error;
     } finally {
       client.release();
     }
   });
-  app.use('/api', async (req, res, next) => {
+  app.use("/api", async (req, res, next) => {
     const user = await authenticate(req);
-    res.set('Cache-Control', 'no-store');
+    res.set("Cache-Control", "no-store");
     res.locals.user = user;
     if (
       user.session &&
-      !['GET', 'HEAD', 'OPTIONS'].includes(req.method) &&
+      !["GET", "HEAD", "OPTIONS"].includes(req.method) &&
       !equal(
-        req.headers['x-csrf-token']?.toString() ?? '',
+        req.headers["x-csrf-token"]?.toString() ?? "",
         csrf(user.session, config.ENCRYPTION_KEY),
       )
     )
-      throw new ApiError(403, 'Valid CSRF token required.');
+      throw new ApiError(403, "Valid CSRF token required.");
     next();
   });
-  app.get('/api/me', (_req, res) => {
+  app.get("/api/me", (_req, res) => {
     const u = res.locals.user as Principal;
     res.json({
       user: safeUser(u),
-      ...(u.session ? { csrf_token: csrf(u.session, config.ENCRYPTION_KEY) } : {}),
+      ...(u.session
+        ? { csrf_token: csrf(u.session, config.ENCRYPTION_KEY) }
+        : {}),
     });
   });
-  app.post('/api/logout', async (req, res) => {
+  app.post("/api/logout", async (req, res) => {
     const u = res.locals.user as Principal;
     if (u.session)
-      await db.query('DELETE FROM sessions WHERE token_hash=$1', [digest(u.session)]);
-    res.clearCookie('urumi_session', { path: '/' });
+      await db.query("DELETE FROM sessions WHERE token_hash=$1", [
+        digest(u.session),
+      ]);
+    res.clearCookie("urumi_session", { path: "/" });
     res.status(204).end();
   });
-  app.get('/api/keys', async (_req, res) => {
+  app.get("/api/stores", async (_req, res) =>
+    res.json({
+      stores: await stores.list(res.locals.user),
+      config: stores.publicConfig(),
+    }),
+  );
+  app.post("/api/stores", async (req, res) => {
+    const input = parse(
+      z.object({ id: z.uuid(), name: z.string().trim().min(2).max(60) }),
+      req.body,
+    );
+    const store = await stores.create(res.locals.user, input);
+    res.status(202).json({ store: { id: store.id, status: store.status } });
+  });
+  app.post("/api/stores/:id/retry", async (req, res) => {
+    await stores.retry(res.locals.user, parse(id, req.params.id));
+    res.status(202).json({ status: "Provisioning" });
+  });
+  app.delete("/api/stores/:id", async (req, res) => {
+    await stores.remove(res.locals.user, parse(id, req.params.id));
+    await upstreams.refreshAll();
+    res.status(202).json({ status: "Deleting" });
+  });
+  app.get("/api/keys", async (_req, res) => {
     const u = res.locals.user as Principal;
     res.json({
       keys: (
         await db.query(
           "SELECT id,user_id,name,prefix,created_at,revoked_at FROM api_keys WHERE purpose='external' AND ($1::boolean OR user_id=$2) ORDER BY created_at DESC",
-          [u.role === 'admin', u.id],
+          [u.role === "admin", u.id],
         )
       ).rows,
     });
   });
-  app.post('/api/keys', async (req, res) => {
+  app.post("/api/keys", async (req, res) => {
     const u = res.locals.user as Principal;
     const input = parse(keyInput, req.body);
     const owner = input.user_id ?? u.id;
     if (owner !== u.id) requireAdmin(u);
     if (
-      !(await db.query('SELECT id FROM users WHERE id=$1 AND active=true', [owner]))
-        .rowCount
+      !(
+        await db.query("SELECT id FROM users WHERE id=$1 AND active=true", [
+          owner,
+        ])
+      ).rowCount
     )
-      throw new ApiError(404, 'User not found.');
-    const raw = 'urumi_' + token();
+      throw new ApiError(404, "User not found.");
+    const raw = "urumi_" + token();
     const inserted = await db.query(
-      'INSERT INTO api_keys(user_id,name,prefix,token_hash) VALUES($1,$2,$3,$4) RETURNING id,user_id,name,prefix,created_at',
+      "INSERT INTO api_keys(user_id,name,prefix,token_hash) VALUES($1,$2,$3,$4) RETURNING id,user_id,name,prefix,created_at",
       [owner, input.name, raw.slice(0, 12), digest(raw)],
     );
     res.status(201).json({ key: { ...inserted.rows[0], token: raw } });
   });
-  app.delete('/api/keys/:id', async (req, res) => {
+  app.delete("/api/keys/:id", async (req, res) => {
     const u = res.locals.user as Principal;
     const keyId = parse(id, req.params.id);
     const changed = await db.query(
-      'UPDATE api_keys SET revoked_at=COALESCE(revoked_at,now()) WHERE id=$1 AND ($2::boolean OR user_id=$3) RETURNING id',
-      [keyId, u.role === 'admin', u.id],
+      "UPDATE api_keys SET revoked_at=COALESCE(revoked_at,now()) WHERE id=$1 AND ($2::boolean OR user_id=$3) RETURNING id",
+      [keyId, u.role === "admin", u.id],
     );
-    if (!changed.rowCount) throw new ApiError(404, 'Key not found.');
+    if (!changed.rowCount) throw new ApiError(404, "Key not found.");
     res.status(204).end();
   });
-  app.get('/api/members', async (_req, res) => {
+  app.get("/api/members", async (_req, res) => {
     requireAdmin(res.locals.user);
     res.json({
       members: (
         await db.query(
-          'SELECT id,email,role,active,created_at FROM users ORDER BY created_at',
+          "SELECT id,email,role,active,created_at FROM users ORDER BY created_at",
         )
       ).rows,
     });
   });
-  app.patch('/api/members/:id', async (req, res) => {
+  app.patch("/api/members/:id", async (req, res) => {
     requireAdmin(res.locals.user);
     const memberId = parse(id, req.params.id);
     const input = parse(
       z.object({
-        role: z.enum(['admin', 'member']).optional(),
+        role: z.enum(["admin", "member"]).optional(),
         active: z.boolean().optional(),
       }),
       req.body,
     );
     const client = await db.pool.connect();
     try {
-      await client.query('BEGIN');
-      await client.query('SELECT pg_advisory_xact_lock(70125)');
+      await client.query("BEGIN");
+      await client.query("SELECT pg_advisory_xact_lock(70125)");
       const member = (
-        await client.query('SELECT id,role,active FROM users WHERE id=$1 FOR UPDATE', [
-          memberId,
-        ])
+        await client.query(
+          "SELECT id,role,active FROM users WHERE id=$1 FOR UPDATE",
+          [memberId],
+        )
       ).rows[0];
-      if (!member) throw new ApiError(404, 'User not found.');
+      if (!member) throw new ApiError(404, "User not found.");
       if (
-        member.role === 'admin' &&
+        member.role === "admin" &&
         member.active &&
-        (input.role === 'member' || input.active === false)
+        (input.role === "member" || input.active === false)
       ) {
         const remaining = await client.query(
           "SELECT id FROM users WHERE role='admin' AND active=true AND id<>$1",
           [memberId],
         );
         if (!remaining.rowCount)
-          throw new ApiError(409, 'Cannot remove the last active administrator.');
+          throw new ApiError(
+            409,
+            "Cannot remove the last active administrator.",
+          );
       }
-      await client.query('UPDATE users SET role=$2,active=$3 WHERE id=$1', [
+      await client.query("UPDATE users SET role=$2,active=$3 WHERE id=$1", [
         memberId,
         input.role ?? member.role,
         input.active ?? member.active,
       ]);
-      await client.query('COMMIT');
+      await client.query("COMMIT");
       res.json({ id: memberId });
     } catch (error) {
-      await client.query('ROLLBACK');
+      await client.query("ROLLBACK");
       throw error;
     } finally {
       client.release();
     }
   });
-  app.get('/api/invitations', async (_req, res) => {
+  app.get("/api/invitations", async (_req, res) => {
     requireAdmin(res.locals.user);
     res.json({
       invitations: (
         await db.query(
-          'SELECT id,email,role,expires_at,accepted_at FROM invitations ORDER BY expires_at DESC LIMIT 100',
+          "SELECT id,email,role,expires_at,accepted_at FROM invitations ORDER BY expires_at DESC LIMIT 100",
         )
       ).rows,
     });
   });
-  app.post('/api/invitations', async (req, res) => {
+  app.post("/api/invitations", async (req, res) => {
     const u = res.locals.user as Principal;
     requireAdmin(u);
     const input = parse(
-      z.object({ email, role: z.enum(['admin', 'member']).default('member') }),
+      z.object({ email, role: z.enum(["admin", "member"]).default("member") }),
       req.body,
     );
     const raw = token();
@@ -445,11 +502,11 @@ export function createGateway(
         email: input.email,
         token: raw,
         expires_in_hours: 48,
-        accept_url: config.PUBLIC_URL + '/invite?token=' + raw,
+        accept_url: config.PUBLIC_URL + "/invite?token=" + raw,
       },
     });
   });
-  app.get('/api/servers', async (_req, res) => {
+  app.get("/api/servers", async (_req, res) => {
     requireAdmin(res.locals.user);
     res.json({
       servers: (await upstreams.rows()).map((r) => ({
@@ -458,7 +515,7 @@ export function createGateway(
         name: r.name,
         url: r.url,
         enabled: r.enabled,
-        status: r.enabled ? r.status : 'Disabled',
+        status: r.enabled ? r.status : "Disabled",
         last_error: r.last_error,
         read_tools: r.read_tools,
         credential_configured: !!r.credential,
@@ -466,21 +523,26 @@ export function createGateway(
       })),
     });
   });
-  app.post('/api/servers', async (req, res) => {
+  app.post("/api/servers", async (req, res) => {
     requireAdmin(res.locals.user);
     const input = parse(serverInput, req.body);
     try {
-      await validateUpstream(input.url, config.UPSTREAM_ALLOWED_HOSTS.split(','));
+      await validateUpstream(
+        input.url,
+        config.UPSTREAM_ALLOWED_HOSTS.split(","),
+      );
     } catch {
-      throw new ApiError(400, 'URL violates upstream network policy.');
+      throw new ApiError(400, "URL violates upstream network policy.");
     }
-    const inserted = await db.query<import('./database.js').Upstream>(
-      'INSERT INTO upstreams(slug,name,url,credential,enabled,read_tools) VALUES($1,$2,$3,$4,$5,$6) RETURNING *',
+    const inserted = await db.query<import("./database.js").Upstream>(
+      "INSERT INTO upstreams(slug,name,url,credential,enabled,read_tools) VALUES($1,$2,$3,$4,$5,$6) RETURNING *",
       [
         input.slug,
         input.name,
         input.url,
-        input.credential ? encrypt(input.credential, config.ENCRYPTION_KEY) : null,
+        input.credential
+          ? encrypt(input.credential, config.ENCRYPTION_KEY)
+          : null,
         input.enabled,
         input.read_tools,
       ],
@@ -488,7 +550,7 @@ export function createGateway(
     await upstreams.refresh(inserted.rows[0]);
     res.status(201).json({ id: inserted.rows[0].id });
   });
-  app.patch('/api/servers/:id', async (req, res) => {
+  app.patch("/api/servers/:id", async (req, res) => {
     requireAdmin(res.locals.user);
     const serverId = parse(id, req.params.id);
     // Slug is immutable: changing display names must not break configured tool names.
@@ -503,20 +565,23 @@ export function createGateway(
       req.body,
     );
     const existing = (
-      await db.query<import('./database.js').Upstream>(
-        'SELECT * FROM upstreams WHERE id=$1',
+      await db.query<import("./database.js").Upstream>(
+        "SELECT * FROM upstreams WHERE id=$1",
         [serverId],
       )
     ).rows[0];
-    if (!existing) throw new ApiError(404, 'Server not found.');
+    if (!existing) throw new ApiError(404, "Server not found.");
     if (input.url)
       try {
-        await validateUpstream(input.url, config.UPSTREAM_ALLOWED_HOSTS.split(','));
+        await validateUpstream(
+          input.url,
+          await upstreams.allowedHosts(existing),
+        );
       } catch {
-        throw new ApiError(400, 'URL violates upstream network policy.');
+        throw new ApiError(400, "URL violates upstream network policy.");
       }
-    const updated = await db.query<import('./database.js').Upstream>(
-      'UPDATE upstreams SET name=$2,url=$3,credential=$4,enabled=$5,read_tools=$6 WHERE id=$1 RETURNING *',
+    const updated = await db.query<import("./database.js").Upstream>(
+      "UPDATE upstreams SET name=$2,url=$3,credential=$4,enabled=$5,read_tools=$6 WHERE id=$1 RETURNING *",
       [
         serverId,
         input.name ?? existing.name,
@@ -533,31 +598,49 @@ export function createGateway(
     await upstreams.refresh(updated.rows[0]);
     res.json({ id: serverId });
   });
-  app.delete('/api/servers/:id', async (req, res) => {
+  app.delete("/api/servers/:id", async (req, res) => {
     requireAdmin(res.locals.user);
     const serverId = parse(id, req.params.id);
-    const result = await db.query('DELETE FROM upstreams WHERE id=$1', [serverId]);
-    if (!result.rowCount) throw new ApiError(404, 'Server not found.');
+    if (
+      (
+        await db.query(
+          "SELECT id FROM managed_stores WHERE upstream_id=$1 AND status<>'Deleted'",
+          [serverId],
+        )
+      ).rowCount
+    )
+      throw new ApiError(
+        409,
+        "Delete this managed store from Stores to remove its resources and integration together.",
+      );
+    const result = await db.query("DELETE FROM upstreams WHERE id=$1", [
+      serverId,
+    ]);
+    if (!result.rowCount) throw new ApiError(404, "Server not found.");
     await upstreams.forget(serverId);
     res.status(204).end();
   });
-  app.post('/api/servers/refresh', async (_req, res) => {
+  app.post("/api/servers/refresh", async (_req, res) => {
     requireAdmin(res.locals.user);
     await upstreams.refreshAll();
-    res.json({ status: 'refreshed' });
+    res.json({ status: "refreshed" });
   });
   const activeChats = new Set<string>();
-  app.get('/api/chat', (_req, res) =>
+  app.get("/api/chat", (_req, res) =>
     res.json({ configured: !!config.LLM_API_KEY, model: config.LLM_MODEL }),
   );
-  app.post('/api/chat', async (req, res) => {
+  app.post("/api/chat", async (req, res) => {
     const user = res.locals.user as Principal;
-    if (!user.session) throw new ApiError(403, 'Dashboard login required for chat.');
+    if (!user.session)
+      throw new ApiError(403, "Dashboard login required for chat.");
     const input = parse(chatInput, req.body);
     if (activeChats.has(user.id) || activeChats.size >= 4)
-      throw new ApiError(429, 'Another chat is running. Wait for it to finish.');
+      throw new ApiError(
+        429,
+        "Another chat is running. Wait for it to finish.",
+      );
     const aborted = new AbortController();
-    res.on('close', () => {
+    res.on("close", () => {
       if (!res.writableEnded) aborted.abort();
     });
     activeChats.add(user.id);
@@ -582,24 +665,24 @@ export function createGateway(
       activeChats.delete(user.id);
     }
   });
-  app.get('/api/metrics', async (_req, res) => {
+  app.get("/api/metrics", async (_req, res) => {
     requireAdmin(res.locals.user);
     res.json({ metrics: await metrics(db) });
   });
-  app.get('/metrics', async (req, res) => {
+  app.get("/metrics", async (req, res) => {
     const user = await authenticate(req);
     requireAdmin(user);
     res
-      .set('Cache-Control', 'no-store')
-      .type('text/plain; version=0.0.4')
+      .set("Cache-Control", "no-store")
+      .type("text/plain; version=0.0.4")
       .send(prometheus(await metrics(db)));
   });
-  app.get('/api/tools', async (_req, res) => {
+  app.get("/api/tools", async (_req, res) => {
     res.json({
       tools: (await upstreams.catalog(res.locals.user.role)).map((x) => x.tool),
     });
   });
-  app.get('/api/audit', async (req, res) => {
+  app.get("/api/audit", async (req, res) => {
     requireAdmin(res.locals.user);
     const page = parse(
       z.coerce.number().int().min(1).max(100000).default(1),
@@ -608,17 +691,17 @@ export function createGateway(
     res.json({
       events: (
         await db.query(
-          'SELECT a.*,u.email AS user_email FROM audit_log a LEFT JOIN users u ON u.id=a.user_id ORDER BY a.id DESC LIMIT 100 OFFSET $1',
+          "SELECT a.*,u.email AS user_email FROM audit_log a LEFT JOIN users u ON u.id=a.user_id ORDER BY a.id DESC LIMIT 100 OFFSET $1",
           [(page - 1) * 100],
         )
       ).rows,
       page,
     });
   });
-  app.post('/mcp', async (req, res) => {
+  app.post("/mcp", async (req, res) => {
     const user = await authenticate(req, true);
     const server = new Server(
-      { name: 'urumi-team-gateway', version: '0.1.0' },
+      { name: "urumi-team-gateway", version: "0.1.0" },
       { capabilities: { tools: {} } },
     );
     server.setRequestHandler(ListToolsRequestSchema, async () => ({
@@ -628,24 +711,27 @@ export function createGateway(
       const start = Date.now();
       const name = request.params.name;
       const rows = await upstreams.rows();
-      const row = rows.find((r) => name.startsWith(r.slug + '__'));
+      const row = rows.find((r) => name.startsWith(r.slug + "__"));
       const entry = row
         ? (upstreams.entries.get(row.id)?.tools ?? []).find(
             (t) => exposedName(row.slug, t.name) === name,
           )
         : undefined;
-      const auditId = await audit(user, name, 'started', row);
+      const auditId = await audit(user, name, "started", row);
       let result;
       try {
         if (row && !row.enabled)
-          result = failure('SERVER_DISABLED', 'This server is disabled.');
+          result = failure("SERVER_DISABLED", "This server is disabled.");
         else if (!row || !entry)
           result = failure(
-            'UNKNOWN_TOOL',
-            'Tool is unknown or its upstream has no discovered catalog.',
+            "UNKNOWN_TOOL",
+            "Tool is unknown or its upstream has no discovered catalog.",
           );
-        else if (user.role !== 'admin' && !row.read_tools.includes(entry.name))
-          result = failure('FORBIDDEN', 'You are not permitted to call this tool.');
+        else if (user.role !== "admin" && !row.read_tools.includes(entry.name))
+          result = failure(
+            "FORBIDDEN",
+            "You are not permitted to call this tool.",
+          );
         else
           result = await upstreams.call(
             row,
@@ -653,15 +739,16 @@ export function createGateway(
             request.params.arguments ?? {},
             extra.signal,
           );
-        const error = (result.structuredContent?.error as { code?: string } | undefined)
-          ?.code;
+        const error = (
+          result.structuredContent?.error as { code?: string } | undefined
+        )?.code;
         await db.query(
-          'UPDATE audit_log SET duration_ms=$2,outcome=$3,error_code=$4 WHERE id=$1',
+          "UPDATE audit_log SET duration_ms=$2,outcome=$3,error_code=$4 WHERE id=$1",
           [
             auditId,
             Date.now() - start,
-            result.isError ? 'error' : 'success',
-            error ?? (result.isError ? 'UPSTREAM_TOOL_ERROR' : null),
+            result.isError ? "error" : "success",
+            error ?? (result.isError ? "UPSTREAM_TOOL_ERROR" : null),
           ],
         );
         return result;
@@ -670,25 +757,25 @@ export function createGateway(
           "UPDATE audit_log SET duration_ms=$2,outcome='error',error_code='GATEWAY_ERROR' WHERE id=$1",
           [auditId, Date.now() - start],
         );
-        return failure('GATEWAY_ERROR', 'Tool execution failed.');
+        return failure("GATEWAY_ERROR", "Tool execution failed.");
       }
     });
     const transport = new StreamableHTTPServerTransport({
       sessionIdGenerator: undefined,
       enableJsonResponse: true,
     });
-    res.on('close', () => {
+    res.on("close", () => {
       void Promise.allSettled([transport.close(), server.close()]);
     });
     await server.connect(transport);
     await transport.handleRequest(req, res, req.body);
   });
-  app.all('/mcp', async (req, res) => {
+  app.all("/mcp", async (req, res) => {
     await authenticate(req, true);
     res
-      .set('Allow', 'POST')
+      .set("Allow", "POST")
       .status(405)
-      .json({ error: 'Stateless MCP accepts POST only.' });
+      .json({ error: "Stateless MCP accepts POST only." });
   });
   app.use(
     (
@@ -699,24 +786,24 @@ export function createGateway(
     ) => {
       if (res.headersSent) return;
       const status =
-        error instanceof ApiError
+        error instanceof ApiError || error instanceof StoreError
           ? error.status
-          : error.code === '23505'
+          : error.code === "23505"
             ? 409
             : [400, 413].includes(error.status)
               ? error.status
               : 500;
       res.status(status).json({
         error:
-          error instanceof ApiError
+          error instanceof ApiError || error instanceof StoreError
             ? error.message
             : status === 409
-              ? 'Record already exists.'
+              ? "Record already exists."
               : status === 400
-                ? 'Invalid request body.'
+                ? "Invalid request body."
                 : status === 413
-                  ? 'Request too large.'
-                  : 'Request failed.',
+                  ? "Request too large."
+                  : "Request failed.",
       });
     },
   );

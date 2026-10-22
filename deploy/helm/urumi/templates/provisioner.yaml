@@ -1,0 +1,206 @@
+{{- if and .Values.platform.enabled .Values.provisioning.enabled }}
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ .Release.Name }}-provisioner
+---
+# The worker cannot read Secrets in the platform namespace. Each child gets its own binding.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ .Release.Name }}-store-resources
+rules:
+  - apiGroups: [""]
+    resources: [secrets, services, persistentvolumeclaims, resourcequotas, limitranges]
+    verbs: [get, list, create, patch]
+  - apiGroups: [apps]
+    resources: [deployments]
+    verbs: [get, create, patch]
+  - apiGroups: [batch]
+    resources: [jobs]
+    verbs: [get, create]
+  - apiGroups: [networking.k8s.io]
+    resources: [ingresses, networkpolicies]
+    verbs: [get, create, patch]
+  - apiGroups: [cert-manager.io]
+    resources: [certificates]
+    verbs: [get, create, patch]
+  - apiGroups: [traefik.io]
+    resources: [middlewares]
+    verbs: [get, create, patch]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ .Release.Name }}-store-controller
+rules:
+  - apiGroups: [""]
+    resources: [namespaces]
+    verbs: [get, create, delete]
+  - apiGroups: [""]
+    resources: [persistentvolumes]
+    verbs: [get]
+  - apiGroups: [rbac.authorization.k8s.io]
+    resources: [rolebindings]
+    verbs: [get, create]
+  - apiGroups: [rbac.authorization.k8s.io]
+    resources: [clusterroles]
+    resourceNames: ["{{ .Release.Name }}-store-resources"]
+    verbs: [bind]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ .Release.Name }}-store-controller
+roleRef: {apiGroup: rbac.authorization.k8s.io, kind: ClusterRole, name: "{{ .Release.Name }}-store-controller"}
+subjects:
+  - {kind: ServiceAccount, name: "{{ .Release.Name }}-provisioner", namespace: "{{ .Release.Namespace }}"}
+---
+# CEL admission restrictions prevent the worker's dynamic namespace/binding privileges
+# from being used against platform or unrelated namespaces if it is compromised.
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: {{ .Release.Name }}-managed-namespace-boundary
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+      - apiGroups: [""]
+        apiVersions: [v1]
+        operations: [CREATE, UPDATE, DELETE]
+        resources: [namespaces]
+  matchConditions:
+    - name: provisioner-only
+      expression: "request.userInfo.username == 'system:serviceaccount:{{ .Release.Namespace }}:{{ .Release.Name }}-provisioner'"
+  variables:
+    - name: target
+      expression: "object != null ? object : oldObject"
+  validations:
+    - expression: "variables.target.metadata.name.matches('^urumi-shop-[a-f0-9]{12}$') && has(variables.target.metadata.labels) && 'app.kubernetes.io/managed-by' in variables.target.metadata.labels && variables.target.metadata.labels['app.kubernetes.io/managed-by'] == 'urumi-store-provisioner' && 'urumi.io/platform' in variables.target.metadata.labels && variables.target.metadata.labels['urumi.io/platform'] == '{{ .Release.Namespace }}'"
+      message: The store worker may only manage its labeled child namespaces.
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: {{ .Release.Name }}-managed-namespace-boundary
+spec:
+  policyName: {{ .Release.Name }}-managed-namespace-boundary
+  validationActions: [Deny]
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: {{ .Release.Name }}-managed-role-boundary
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+      - apiGroups: [rbac.authorization.k8s.io]
+        apiVersions: [v1]
+        operations: [CREATE, UPDATE]
+        resources: [rolebindings]
+  matchConditions:
+    - name: provisioner-only
+      expression: "request.userInfo.username == 'system:serviceaccount:{{ .Release.Namespace }}:{{ .Release.Name }}-provisioner'"
+  validations:
+    - expression: "request.namespace.matches('^urumi-shop-[a-f0-9]{12}$') && object.metadata.name == 'urumi-store-provisioner' && object.roleRef.kind == 'ClusterRole' && object.roleRef.name == '{{ .Release.Name }}-store-resources' && size(object.subjects) == 1 && object.subjects[0].kind == 'ServiceAccount' && object.subjects[0].name == '{{ .Release.Name }}-provisioner' && object.subjects[0].namespace == '{{ .Release.Namespace }}'"
+      message: The store worker may bind only its fixed provisioning role inside managed namespaces.
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: {{ .Release.Name }}-managed-role-boundary
+spec:
+  policyName: {{ .Release.Name }}-managed-role-boundary
+  validationActions: [Deny]
+---
+{{- if .Values.tls.enabled }}
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: {{ .Release.Name }}-managed-stores-acme
+spec:
+  acme:
+    email: {{ required "TLS email is required" .Values.tls.email | quote }}
+    server: {{ .Values.tls.server | quote }}
+    privateKeySecretRef: {name: "{{ .Release.Name }}-managed-stores-acme"}
+    solvers:
+      - http01:
+          ingress: {ingressClassName: traefik}
+---
+{{- end }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}-provisioner
+spec:
+  replicas: 1
+  strategy: {type: Recreate}
+  selector:
+    matchLabels: {app: "{{ .Release.Name }}-provisioner"}
+  template:
+    metadata:
+      labels: {app: "{{ .Release.Name }}-provisioner"}
+    spec:
+      serviceAccountName: {{ .Release.Name }}-provisioner
+      automountServiceAccountToken: true
+      securityContext: {runAsNonRoot: true, runAsUser: 1000, runAsGroup: 1000, seccompProfile: {type: RuntimeDefault}}
+      containers:
+        - name: provisioner
+          image: {{ .Values.platform.image | quote }}
+          imagePullPolicy: IfNotPresent
+          ports: [{name: http, containerPort: 3000}]
+          env:
+            - {name: SERVICE_MODE, value: provisioner}
+            - {name: PGHOST, value: "{{ .Release.Name }}-platform-database"}
+            - {name: PGUSER, value: urumi}
+            - {name: PGDATABASE, value: urumi}
+            - name: PGPASSWORD
+              valueFrom: {secretKeyRef: {name: "{{ .Release.Name }}-platform-secrets", key: PGPASSWORD}}
+            - name: ENCRYPTION_KEY
+              valueFrom: {secretKeyRef: {name: "{{ .Release.Name }}-platform-secrets", key: ENCRYPTION_KEY}}
+            {{- include "urumi.storeEnvironment" . | nindent 12 }}
+          resources:
+            requests: {cpu: 50m, memory: 96Mi}
+            limits: {cpu: 500m, memory: 256Mi}
+          securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: [ALL]}}
+          startupProbe: {httpGet: {path: /healthz, port: http}, periodSeconds: 5, failureThreshold: 30}
+          readinessProbe: {httpGet: {path: /readyz, port: http}, periodSeconds: 10, timeoutSeconds: 3}
+          livenessProbe: {httpGet: {path: /healthz, port: http}, periodSeconds: 20, timeoutSeconds: 3}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ .Release.Name }}-provisioner
+spec:
+  podSelector: {matchLabels: {app: "{{ .Release.Name }}-provisioner"}}
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - podSelector: {matchLabels: {app: "{{ .Release.Name }}-platform-database"}}
+      ports: [{protocol: TCP, port: 5432}]
+    - to:
+        - ipBlock: {cidr: 10.43.0.1/32}
+      ports: [{protocol: TCP, port: 443}]
+    - to:
+        - ipBlock: {cidr: {{ required "Set provisioning.apiServerCidr to the Kubernetes node API address /32" .Values.provisioning.apiServerCidr | quote }}}
+      ports: [{protocol: TCP, port: 6443}]
+{{- end }}
+
+{{- if and .Values.platform.enabled .Values.provisioning.enabled }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ .Release.Name }}-managed-store-egress
+spec:
+  podSelector: {matchLabels: {app: "{{ .Release.Name }}-gateway"}}
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels: {app.kubernetes.io/managed-by: urumi-store-provisioner, urumi.io/platform: "{{ .Release.Namespace }}"}
+          podSelector: {matchLabels: {app: mcp}}
+      ports: [{protocol: TCP, port: 3000}]
+{{- end }}

@@ -7,6 +7,9 @@ p.add_argument('--output',required=True)
 p.add_argument('--allow-plaintext',action='store_true',help='Private local rehearsal only; backup contains credentials.')
 a=p.parse_args()
 if not a.allow_plaintext: p.error('Choose a private local destination and explicitly acknowledge --allow-plaintext; encrypt before off-host storage.')
+# The single-store recovery format cannot represent managed store volumes.
+managed=json.loads(subprocess.check_output(['kubectl','--context',a.context,'get','namespaces','-l','app.kubernetes.io/managed-by=urumi-store-provisioner','-o','json']))['items']
+if managed: raise SystemExit('Managed stores exist. This helper supports the primary-store recovery format only; follow docs/multi-store.md for managed-store backup requirements.')
 os.umask(0o077)
 out=pathlib.Path(a.output).resolve()
 out.mkdir(parents=True,exist_ok=False,mode=0o700)

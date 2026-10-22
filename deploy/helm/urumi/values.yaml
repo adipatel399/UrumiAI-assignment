@@ -47,3 +47,12 @@ tls:
   issuerName: urumi-acme
   email: ""
   server: https://acme-v02.api.letsencrypt.org/directory
+provisioning:
+  enabled: false
+  baseDomain: localhost
+  publicPort: "8080"
+  storageClass: local-path
+  apiServerCidr: ""
+  maxPerUser: 3
+  maxTotal: 4
+  timeoutSeconds: 900

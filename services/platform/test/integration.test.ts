@@ -112,10 +112,12 @@ test(
     await upstreams.refreshAll();
     let modelStep = 0;
     let modelMode = 'cross';
+    let transientRate = false;
     const provider: typeof fetch = async (_url, init) => {
       const body = JSON.parse(String(init?.body));
       assert(!JSON.stringify(body).includes('test-support-token'));
       assert(!JSON.stringify(body).includes('test-woo-token'));
+      if (transientRate) { transientRate = false; return new Response('{}', { status: 429, headers: { 'retry-after': '0.01' } }); }
       if (modelMode === 'rate') return new Response('{}', { status: 429 });
       const tools = body.tools?.map((t: any) => t.function.name) ?? [];
       if (modelMode === 'write') assert(tools.includes('store__create_product'));
@@ -319,6 +321,7 @@ test(
       admin,
     );
     assert.equal(writeChat.status, 200);
+    assert.equal(modelStep, 1, 'successful write must not make a second provider request');
     assert.equal(writes, 1);
     modelStep = 0;
     modelMode = 'member';
@@ -345,6 +348,15 @@ test(
         (a) => a.email === 'admin@example.test' && a.tool === 'inventory__search',
       ),
     );
+    modelMode = 'cross';
+    modelStep = 0;
+    transientRate = true;
+    const resumedRead = await request('/api/chat', 'POST', {
+      messages: [{ role: 'user', content: 'Inventory and knowledge' }],
+    }, admin);
+    assert.equal(resumedRead.status, 200);
+    assert.equal(resumedRead.body.activity.length, 2);
+    assert.equal(writes, 1, 'read-only provider backoff must not replay writes');
     modelMode = 'rate';
     const limited = await request(
       '/api/chat',

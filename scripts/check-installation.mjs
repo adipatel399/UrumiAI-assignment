@@ -11,17 +11,17 @@ const r=await fetch(base+'/api/login',{method:'POST',headers:{'Content-Type':'ap
 assert.equal(r.status,200);const data=await r.json();
 const headers={'Content-Type':'application/json',Cookie:r.headers.get('set-cookie').split(';')[0],'X-CSRF-Token':data.csrf_token};
 const servers=await (await fetch(base+'/api/servers',{headers})).json();
-assert.equal(servers.servers.length,3);assert(servers.servers.every(s=>s.status==='Connected'));
+for(const slug of ['store','inventory','knowledge'])assert(servers.servers.some(s=>s.slug===slug&&s.status==='Connected'));assert(servers.servers.filter(s=>s.enabled).every(s=>s.status==='Connected'));
 const minted=await fetch(base+'/api/keys',{method:'POST',headers,body:JSON.stringify({name:'Read-only installation verification'})});
 assert.equal(minted.status,201);const key=(await minted.json()).key;
 const client=new Client({name:'installation-check',version:'1.0.0'});
 try {
  await client.connect(new StreamableHTTPClientTransport(new URL(base+'/mcp'),{requestInit:{headers:{Authorization:'Bearer '+key.token}}}));
- assert.equal((await client.listTools()).tools.length,8);
+ const count=(await client.listTools()).tools.length;assert.equal(count,servers.servers.filter(s=>s.enabled).reduce((n,s)=>n+s.tools.length,0));assert(count>=8);
  for(const [name,args] of [['store__list_products',{}],['inventory__search',{query:''}],['knowledge__search',{query:''}]]) {
    assert(!(await client.callTool({name,arguments:args})).isError);
  }
- console.log('PASS: login, three connected registrations, eight tools, and reads through each upstream.');
+ console.log('PASS: login, core registrations, '+count+' aggregated tools, and reads through each core upstream.');
 } finally {
  await client.close();
  await fetch(base+'/api/keys/'+key.id,{method:'DELETE',headers});

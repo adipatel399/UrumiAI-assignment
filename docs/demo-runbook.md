@@ -14,7 +14,7 @@ Use fictional store data. Show real requests and results, and explain decisions 
 
 ### System design
 
-Explain the four layers: WooCommerce/MariaDB; handwritten WooCommerce MCP; gateway/dashboard/PostgreSQL; dashboard chat. Inventory and knowledge are two additional upstreams. The gateway is a server to clients and a client to upstreams. The model proposes a tool; application code executes through the same authenticated MCP endpoint as external clients.
+Explain the four layers: WooCommerce/MariaDB; custom WooCommerce MCP server; gateway/dashboard/PostgreSQL; dashboard chat. Inventory and knowledge are two additional upstreams. The gateway is a server to clients and a client to upstreams. The model proposes a tool; application code executes through the same authenticated MCP endpoint as external clients.
 
 Explain why Node/TypeScript reduces implementation complexity, the official SDK owns protocol transport, WooCommerce REST API avoids direct database writes, and PostgreSQL stores team/access/audit data separately from the store database.
 

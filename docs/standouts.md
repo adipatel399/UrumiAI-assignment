@@ -8,4 +8,4 @@
 | Real VPS | Same chart deployed on Azure Ubuntu/k3s with public HTTPS, independently provisioned Secrets, CPU-compatible immutable images, and larger local-path claims. See [deployment](production-deployment.md). |
 | Lifecycle and recovery | Explicit-context setup, immutable image workflow, tested Helm upgrade/rollback, private quiesced backup and restore rehearsal in a disposable cluster. See [recovery](upgrades-and-recovery.md). |
 
-The optional multi-store bonus, OAuth, hosted-server provisioning, many-tool search, and multi-replica scaling are not claimed. Depth and a working single-store core took priority. The inventory integration is intentionally synthetic and is not synchronized to WooCommerce stock.
+Multi-store provisioning is implemented: concurrent namespace provisioning, automatic MCP registration, isolated networks, quotas, retry/restart recovery, and full namespace/storage teardown. See [multi-store design and verification](multi-store.md). OAuth, arbitrary hosted-server provisioning, many-tool search, and multi-replica scaling are not claimed. The inventory integration is intentionally synthetic and is not synchronized to WooCommerce stock.

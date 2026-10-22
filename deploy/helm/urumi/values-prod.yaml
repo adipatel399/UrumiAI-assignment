@@ -18,3 +18,14 @@ platform:
   cookieSecure: true
   tlsSecret: urumi-gateway-tls
   databaseSize: 10Gi
+# Optional managed stores: set apiServerCidr to the node's internal IP /32.
+# Images above must also be available for managed namespaces.
+provisioning:
+  enabled: false
+  baseDomain: stores.example.com
+  publicPort: ""
+  apiServerCidr: ""
+  storageClass: local-path
+  maxPerUser: 3
+  maxTotal: 4
+  timeoutSeconds: 900

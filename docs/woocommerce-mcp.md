@@ -2,7 +2,7 @@
 
 ## Purpose and request flow
 
-This service exposes five handwritten tools using the official MCP TypeScript SDK and Streamable HTTP. It is an internal application, not a public endpoint.
+This service exposes five tools implemented in this repository using the official MCP TypeScript SDK and Streamable HTTP. It is an internal application, not a public endpoint.
 
 ```text
 Gateway → authenticated MCP request → validated tool input

@@ -4,3 +4,9 @@ store:
   image: urumi-store:0.1.0
 woocommerceMcp:
   enabled: true
+# To enable managed stores, set the k3d server container's internal IP /32.
+provisioning:
+  enabled: false
+  baseDomain: localhost
+  publicPort: "8080"
+  apiServerCidr: ""

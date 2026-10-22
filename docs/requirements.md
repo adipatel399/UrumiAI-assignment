@@ -11,7 +11,7 @@ Statuses describe demonstrated behavior, not just files present. See the store a
 | Stable store and dashboard Ingress | Store and dashboard Ingress available |
 | Probes, requests and limits | Store, both databases, gateway and three MCP services configured and healthy |
 | Secrets absent from source | Generated credentials ignored; Secret applied |
-| Five handwritten WooCommerce MCP tools | Implemented; all five verified against the real store |
+| Five custom WooCommerce MCP server tools | Implemented; all five verified against the real store |
 | Streamable HTTP and internal-only WooCommerce MCP | Official SDK client verified; no public exposure; unrelated pod blocked |
 | Three registered upstreams | WooCommerce, inventory and knowledge verified through gateway |
 | Aggregate discovery and correct routing | SDK client sees eight admin tools; cross-server calls verified |
@@ -27,3 +27,4 @@ Statuses describe demonstrated behavior, not just files present. See the store a
 | Stand-out: real VPS deployment | Azure Malaysia West VM deployed with public store/dashboard HTTPS, independent Secrets and same chart |
 | Upgrade and rollback story | Helm upgrade/rollback passed locally and on VPS; isolated fresh-install and backup/restore rehearsal passed |
 | README, design note, threat model and demo | Setup, design/tradeoffs, threat model, stand-out map, VPS/recovery instructions and demo runbook complete; captioned live VPS rehearsal recorded locally; final upload/form submission awaits candidate review |
+| Bonus: multi-store provisioning | Dedicated durable worker, dashboard lifecycle, namespace-local databases/Secrets/PVCs/Ingress/MCP, concurrent provisioning, automatic registration, quotas/timeouts and isolated networks. Local live worker restart and full namespace/PV deletion verified; see [design and acceptance flow](multi-store.md). |

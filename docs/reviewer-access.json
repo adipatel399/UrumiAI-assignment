@@ -1,0 +1,25 @@
+{
+  "purpose": "Public assessment demo logins only; not infrastructure or provider credentials.",
+  "dashboard": {
+    "url": "https://gateway.85.211.243.237.sslip.io/",
+    "admin": {
+      "email": "reviewer-admin@example.test",
+      "password": "IhQJOz0iPpA0q3EaQHocdob8"
+    },
+    "member": {
+      "email": "reviewer-member@example.test",
+      "password": "m-Cb3RR5aUEt8R7LJhT53Yor"
+    }
+  },
+  "woocommerce": {
+    "storefront_url": "https://store.85.211.243.237.sslip.io/shop/",
+    "admin_url": "https://store.85.211.243.237.sslip.io/wp-admin/",
+    "role": "shop_manager",
+    "username": "reviewer_store",
+    "password": "J2U3ZkoWgZ9Jn3EEv4e-xgsH"
+  },
+  "mcp": {
+    "url": "https://gateway.85.211.243.237.sslip.io/mcp",
+    "authentication": "Sign in as the reviewer member, open API keys, and generate your own key. Send Authorization: Bearer YOUR_KEY."
+  }
+}

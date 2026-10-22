@@ -13,6 +13,10 @@ A WooCommerce hosting platform on Kubernetes with a shared MCP gateway and React
 
 The same Helm chart runs on local k3d and has been deployed on Azure k3s with HTTPS. Live assessment deployment: [storefront](https://store.85.211.243.237.sslip.io/shop/) · [dashboard](https://gateway.85.211.243.237.sslip.io/). Dashboard access requires privately supplied credentials; the deployment is temporary.
 
+## Reviewer access
+
+Use the dedicated live demo accounts in [reviewer-access.json](docs/reviewer-access.json). Both dashboard roles and a WooCommerce shop-manager login are included. Follow the [reviewer walkthrough](docs/reviewer-guide.md) to check the two-user flow, tool permissions, audit, failure isolation and store provisioning. These are intentionally public demo accounts; provider and infrastructure credentials are excluded. The local setup credentials below are generated separately on your own machine.
+
 ## Screenshots
 
 Captured from the running assessment deployment. Products, counts and available stores change as the demo is used.
@@ -37,12 +41,12 @@ The script creates or starts the dedicated local cluster, builds/imports images,
 
 | Open | Local URL | Credentials |
 | --- | --- | --- |
-| Dashboard | http://gateway.localhost:8080/ | `.local/platform-credentials.json` |
+| Dashboard | http://gateway.localhost:8080/ | [Dashboard login fields — example only](docs/examples/platform-credentials.example.json) |
 | Storefront | http://store.localhost:8080/shop/ | Guest checkout |
-| WooCommerce admin | http://store.localhost:8080/wp-admin/ | `.local/store-credentials.json` |
+| WooCommerce admin | http://store.localhost:8080/wp-admin/ | [Store login fields — example only](docs/examples/store-credentials.example.json) |
 | Gateway MCP | `http://gateway.localhost:8080/mcp` | Personal API key from the dashboard |
 
-Browsers resolve `*.localhost` to loopback; the cluster exposes Ingress on loopback port 8080. Open generated credential files privately. They are ignored by Git and must not appear in recordings. Chat additionally needs a provider key; setup and the non-chat features do not.
+Browsers resolve `*.localhost` to loopback; the cluster exposes Ingress on loopback port 8080. The credential links above open example JSON files on GitHub; their password values are placeholders. After local setup, open `.local/platform-credentials.json` for the actual dashboard login and `.local/store-credentials.json` for the actual WooCommerce admin login. Those files are generated on your machine, ignored by Git, and unavailable through GitHub. Keep them private and out of recordings. Chat additionally needs a provider key; setup and the non-chat features do not.
 
 ### Use chat
 

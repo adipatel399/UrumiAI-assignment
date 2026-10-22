@@ -1,6 +1,35 @@
 # Urumi team MCP gateway
 
-A WooCommerce hosting platform on Kubernetes with a shared MCP gateway and React dashboard. Admins connect integrations once; teammates use their permitted tools through dashboard chat or one external MCP endpoint with a personal API key.
+A WooCommerce hosting platform on Kubernetes with a React dashboard, shared MCP gateway, team chat and multi-store provisioning. The same Helm chart runs on local k3d and the hosted Azure k3s deployment.
+
+## Review the live application
+
+No installation or provider API key is needed to use the hosted demo.
+
+- [Dashboard](https://gateway.85.211.243.237.sslip.io/)
+- [WooCommerce storefront](https://store.85.211.243.237.sslip.io/shop/)
+- [WooCommerce administration](https://store.85.211.243.237.sslip.io/wp-admin/)
+- MCP endpoint: `https://gateway.85.211.243.237.sslip.io/mcp`
+
+### Working reviewer logins
+
+These are dedicated, intentionally public accounts for the live assessment demo. Copy the username/email and password from this table, or open [reviewer-access.json](docs/reviewer-access.json).
+
+| Account | Email / username | Password | Use |
+| --- | --- | --- | --- |
+| Dashboard admin | `reviewer-admin@example.test` | `IhQJOz0iPpA0q3EaQHocdob8` | Integrations, team controls, audit, chat writes and store management |
+| Dashboard member | `reviewer-member@example.test` | `m-Cb3RR5aUEt8R7LJhT53Yor` | Read-only tools, chat and personal API keys |
+| WooCommerce shop manager | `reviewer_store` | `J2U3ZkoWgZ9Jn3EEv4e-xgsH` | Inspect products and verify storefront orders |
+
+### Suggested review flow
+
+1. Sign into the dashboard as the reviewer admin. Inspect **Integrations**, **Tool library**, **Audit trail** and **Observability**.
+2. In **AI workspace**, request a uniquely named product and price, tick **Approve changes for this message**, and send once. Inspect the confirmed tool result.
+3. Open the storefront in a private browser window, purchase that exact product using fictional details and **Cash on delivery**, then find its order number in WooCommerce admin. Ask chat for today's orders in the original store and match the result.
+4. In a separate browser profile, sign in as the reviewer member. Generate a personal key under **API keys**. Connect a Streamable HTTP MCP client using the endpoint above and `Authorization: Bearer YOUR_KEY`. Verify permitted tools, retrieve the same order and revoke your test key to check rejection. The live API key is generated in the dashboard; no upstream credential is required.
+5. Open **Stores** to create disposable stores. After they reach Ready, place today's test orders in two stores and ask chat to compare them. Delete one of your disposable stores, check its tools disappear, and confirm the other remains available.
+
+See the [reviewer walkthrough](docs/reviewer-guide.md) for full two-user, permissions, audit, multi-store and failure-isolation checks. The demo shares state, so products and counts may differ from the recording. Groq quotas still apply to hosted chat. Provider and infrastructure credentials remain private.
 
 ## What the app does
 
@@ -11,79 +40,23 @@ A WooCommerce hosting platform on Kubernetes with a shared MCP gateway and React
 - Manages team invitations, personal API keys, revocation, attributed audit logs and per-server metrics.
 - Optionally provisions independent stores from the dashboard, with automatic MCP registration, namespace isolation, quotas, retry and clean deletion.
 
-The same Helm chart runs on local k3d and has been deployed on Azure k3s with HTTPS. Live assessment deployment: [storefront](https://store.85.211.243.237.sslip.io/shop/) · [dashboard](https://gateway.85.211.243.237.sslip.io/). Dashboard access requires privately supplied credentials; the deployment is temporary.
-
-## Reviewer access
-
-Use the dedicated live demo accounts in [reviewer-access.json](docs/reviewer-access.json). Both dashboard roles and a WooCommerce shop-manager login are included. Follow the [reviewer walkthrough](docs/reviewer-guide.md) to check the two-user flow, tool permissions, audit, failure isolation and store provisioning. These are intentionally public demo accounts; provider and infrastructure credentials are excluded. The local setup credentials below are generated separately on your own machine.
-
 ## Screenshots
 
-Captured from the running assessment deployment. Products, counts and available stores change as the demo is used.
+Captured from the running assessment deployment; available stores, counts and products change during review.
 
 ### Team workspace
 
-![Workspace overview with integration status, available tools and attributed recent activity](docs/images/workspace.png)
+![Workspace overview with integrations, tool counts and attributed activity](docs/images/workspace.png)
 
 ### WooCommerce storefront
 
-![Urumi Studio storefront with product photography and collection navigation](docs/images/storefront.png)
+![Urumi Studio storefront with collection navigation and photography](docs/images/storefront.png)
 
-## Quick start
+## Verification and implementation evidence
 
-Requirements: a running Docker engine with approximately 8 GB available, kubectl, Helm, k3d 5.9, Python 3, and Node.js 22 with npm. Run from the repository root:
+The [requirements checklist](docs/requirements.md) maps demonstrated behavior to implementation evidence. [Multi-store design and verification](docs/multi-store.md) covers namespace isolation, quotas, automatic registration, retry/restart recovery and teardown. The video demonstrates the two-user flow and controlled upstream outage on the live deployment.
 
-```sh
-bash scripts/local-up.sh
-```
-
-The script creates or starts the dedicated local cluster, builds/imports images, generates Kubernetes Secrets, installs the Helm chart, and initializes the store, custom MCP server, gateway and supporting integrations. Re-running preserves existing credentials and registrations but briefly restarts local workloads.
-
-| Open | Local URL | Credentials |
-| --- | --- | --- |
-| Dashboard | http://gateway.localhost:8080/ | [Dashboard login fields — example only](docs/examples/platform-credentials.example.json) |
-| Storefront | http://store.localhost:8080/shop/ | Guest checkout |
-| WooCommerce admin | http://store.localhost:8080/wp-admin/ | [Store login fields — example only](docs/examples/store-credentials.example.json) |
-| Gateway MCP | `http://gateway.localhost:8080/mcp` | Personal API key from the dashboard |
-
-Browsers resolve `*.localhost` to loopback; the cluster exposes Ingress on loopback port 8080. The credential links above open example JSON files on GitHub; their password values are placeholders. After local setup, open `.local/platform-credentials.json` for the actual dashboard login and `.local/store-credentials.json` for the actual WooCommerce admin login. Those files are generated on your machine, ignored by Git, and unavailable through GitHub. Keep them private and out of recordings. Chat additionally needs a provider key; setup and the non-chat features do not.
-
-### Use chat
-
-Run `python3 scripts/configure-chat.py`, enter the provider settings in the generated `.local/llm-credentials.json`, then rerun the helper. Sign into the dashboard and open **AI workspace**. Ask for today's orders, or enable **Approve changes for this message** to request a product creation as an admin. Activity shows the actual gateway tool calls. See [provider setup and chat behavior](docs/chat-and-operations.md).
-
-### Place an order
-
-Open the storefront, add a product, and check out with fictional billing details and **Cash on delivery**. Confirm the matching order in **WooCommerce → Orders**, then ask chat for today's orders. For the create-to-order flow, buy the exact product that chat created.
-
-### Connect an external MCP client
-
-In **API keys**, create a personal key. Configure your Streamable HTTP client with endpoint `http://gateway.localhost:8080/mcp` and header `Authorization: Bearer YOUR_USER_KEY`. For the live deployment, use `https://gateway.85.211.243.237.sslip.io/mcp`. Members see permitted read tools; admin-only writes are hidden and rejected on direct invocation. Refresh discovery after integration changes. See [Inspector setup and two-user walkthrough](docs/demo-runbook.md).
-
-### Create another store
-
-Enable Helm `provisioning` settings, then use **Stores** to create, inspect, retry or delete a store. Provisioning is disabled in the default values. Each new store gets its own namespace, database, Secrets, persistent volumes, Ingress host and MCP server. See [multi-store setup and guardrails](docs/multi-store.md).
-
-## Verification
-
-```sh
-npm ci
-npm run build
-npm test
-bash scripts/check-platform-local.sh
-```
-
-The final command requires Docker and runs the database-dependent protocol/access and provisioning tests against disposable PostgreSQL. `npm test` alone skips those tests when their database environment is absent.
-
-For an installed local platform:
-
-```sh
-GATEWAY_URL=http://gateway.localhost:8080 \
-URUMI_CREDENTIAL_DIR=.local \
-node scripts/check-installation.mjs
-```
-
-This probe verifies login, aggregate discovery and reads through the three core integrations; it revokes its temporary key afterward. The [evidence checklist](docs/requirements.md) records demonstrated behavior. The [cluster verification procedure](docs/gateway-design.md#verification) covers state-changing two-user, outage and persistence checks; use those only on a dedicated demo cluster.
+To run the application and automated checks independently, follow [local installation and verification](docs/local-setup.md). Local setup generates its own credentials; the reviewer logins above apply to the hosted demo only.
 
 ## Known limitations
 
@@ -93,7 +66,7 @@ This probe verifies login, aggregate discovery and reads through the three core 
 - Managed-store lifecycle ownership is separate from shared team tool access. Role-permitted team members can read enabled stores; this is not isolation between unrelated customer organizations.
 - Gateway OAuth, arbitrary container-image MCP hosting, public IPv6 upstreams and multi-replica scaling are not implemented. Untrusted upstream tool content remains a prompt-injection risk.
 
-## Design and operations
+## Technical documentation
 
 - [Gateway architecture and tradeoffs](docs/gateway-design.md)
 - [Access controls and threat model](docs/access-and-threat-model.md)
